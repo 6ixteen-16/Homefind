@@ -1,0 +1,444 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   DESIGN SYSTEM — Prestige Properties
+   Aesthetic: Refined Luxury Editorial
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300;1,9..40,400&family=DM+Mono:wght@300;400;500&display=swap');
+
+/* ============================================================
+   CSS VARIABLES (Light Mode)
+   ============================================================ */
+@layer base {
+  :root {
+    /* Semantic color tokens */
+    --background: 40 40% 98%;       /* cream-100 */
+    --foreground: 215 60% 10%;      /* navy-900 */
+    --card: 0 0% 100%;
+    --card-foreground: 215 60% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 60% 10%;
+    --primary: 215 60% 10%;         /* navy-900 */
+    --primary-foreground: 40 40% 98%;
+    --secondary: 40 30% 93%;        /* cream-200 */
+    --secondary-foreground: 215 60% 10%;
+    --muted: 40 30% 93%;
+    --muted-foreground: 215 15% 45%;
+    --accent: 43 57% 55%;           /* gold-500 */
+    --accent-foreground: 215 60% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 20% 88%;
+    --input: 40 20% 88%;
+    --ring: 43 57% 55%;
+    --radius: 0.375rem;
+
+    /* Brand tokens */
+    --color-navy: #0A1628;
+    --color-gold: #C9A84C;
+    --color-cream: #F8F5F0;
+
+    /* Typography */
+    --font-display: 'Cormorant Garamond', Georgia, serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'DM Mono', monospace;
+
+    /* Spacing */
+    --navbar-height: 72px;
+  }
+
+  /* Dark Mode */
+  .dark {
+    --background: 215 60% 6%;
+    --foreground: 40 40% 96%;
+    --card: 215 50% 9%;
+    --card-foreground: 40 40% 96%;
+    --popover: 215 50% 9%;
+    --popover-foreground: 40 40% 96%;
+    --primary: 40 40% 96%;
+    --primary-foreground: 215 60% 6%;
+    --secondary: 215 40% 13%;
+    --secondary-foreground: 40 40% 96%;
+    --muted: 215 40% 13%;
+    --muted-foreground: 215 15% 60%;
+    --accent: 43 57% 55%;
+    --accent-foreground: 215 60% 6%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 30% 18%;
+    --input: 215 30% 18%;
+    --ring: 43 57% 55%;
+  }
+}
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(201, 168, 76, 0.25);
+    color: var(--color-navy);
+  }
+
+  /* Focus styles */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-muted;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-gold);
+    border-radius: 3px;
+  }
+}
+
+/* ============================================================
+   COMPONENT UTILITIES
+   ============================================================ */
+@layer components {
+
+  /* --- Luxury Divider --- */
+  .divider-gold {
+    @apply flex items-center gap-4 my-8;
+  }
+  .divider-gold::before,
+  .divider-gold::after {
+    @apply flex-1 h-px bg-gradient-to-r from-transparent via-gold-500 to-transparent;
+    content: '';
+  }
+
+  /* --- Section Containers --- */
+  .section-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  .section-padding {
+    @apply py-20 md:py-28 lg:py-32;
+  }
+
+  /* --- Display Headings --- */
+  .heading-display {
+    font-family: var(--font-display);
+    @apply text-display-lg font-light tracking-tight;
+  }
+  .heading-section {
+    font-family: var(--font-display);
+    @apply text-display-md font-light tracking-tight;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold tracking-[0.2em] uppercase text-gold-500;
+    font-family: var(--font-body);
+  }
+
+  /* --- Property Cards --- */
+  .property-card {
+    @apply bg-card rounded-xl overflow-hidden shadow-luxury 
+           border border-border/50 
+           transition-all duration-400 ease-out;
+  }
+  .property-card:hover {
+    @apply shadow-luxury-lg -translate-y-1;
+  }
+
+  /* --- Skeleton Loader --- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted) / 0.5) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 1000px 100%;
+    @apply animate-shimmer rounded;
+  }
+
+  /* --- Glass Effect --- */
+  .glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .glass-dark {
+    background: rgba(10, 22, 40, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(201, 168, 76, 0.15);
+  }
+
+  /* --- Badge --- */
+  .badge-sale {
+    @apply bg-navy-900 text-cream-100 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .badge-rent {
+    @apply bg-gold-500 text-navy-900 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .badge-status {
+    @apply text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+
+  /* --- Nav Link --- */
+  .nav-link {
+    @apply relative text-sm font-medium transition-colors duration-200;
+  }
+  .nav-link::after {
+    @apply absolute -bottom-1 left-0 w-0 h-0.5 bg-gold-500 
+           transition-all duration-300 ease-out;
+    content: '';
+  }
+  .nav-link:hover::after,
+  .nav-link.active::after {
+    @apply w-full;
+  }
+
+  /* --- Gold Button --- */
+  .btn-gold {
+    @apply inline-flex items-center gap-2 px-6 py-3 
+           bg-gradient-gold text-navy-900 font-semibold text-sm
+           rounded-lg shadow-gold
+           transition-all duration-300 ease-out
+           hover:shadow-luxury hover:-translate-y-0.5
+           active:translate-y-0;
+  }
+  .btn-navy {
+    @apply inline-flex items-center gap-2 px-6 py-3 
+           bg-navy-900 text-cream-100 font-semibold text-sm
+           rounded-lg border border-navy-800
+           transition-all duration-300 ease-out
+           hover:bg-navy-800 hover:-translate-y-0.5
+           active:translate-y-0;
+  }
+  .btn-outline {
+    @apply inline-flex items-center gap-2 px-6 py-3 
+           border border-gold-500/60 text-gold-500 font-semibold text-sm
+           rounded-lg bg-transparent
+           transition-all duration-300 ease-out
+           hover:bg-gold-500/10 hover:border-gold-500
+           active:translate-y-0;
+  }
+
+  /* --- Admin Sidebar --- */
+  .admin-sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           transition-all duration-200 ease-out;
+  }
+  .admin-sidebar-item:hover {
+    @apply bg-white/5;
+  }
+  .admin-sidebar-item.active {
+    @apply bg-gold-500/15 text-gold-400;
+  }
+
+  /* --- Form Inputs --- */
+  .input-luxury {
+    @apply w-full px-4 py-3 bg-background border border-border rounded-lg
+           text-sm text-foreground placeholder:text-muted-foreground
+           transition-all duration-200
+           focus:outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20;
+  }
+
+  /* --- Stats Card --- */
+  .stat-card {
+    @apply text-center p-6 rounded-xl bg-white/5 border border-white/10
+           backdrop-blur-sm;
+  }
+
+  /* --- Map Container --- */
+  .map-container {
+    @apply w-full rounded-xl overflow-hidden border border-border;
+  }
+  .map-container .leaflet-container {
+    @apply w-full h-full;
+  }
+
+  /* --- WYSIWYG Content --- */
+  .prose-luxury {
+    @apply prose prose-lg max-w-none;
+    font-family: var(--font-body);
+  }
+  .prose-luxury h2 {
+    font-family: var(--font-display);
+    @apply text-display-sm font-light text-foreground;
+  }
+  .prose-luxury h3 {
+    font-family: var(--font-display);
+    @apply text-display-xs font-normal text-foreground;
+  }
+  .prose-luxury a {
+    @apply text-gold-600 underline-offset-2;
+  }
+
+  /* --- Status Badges --- */
+  .status-new      { @apply bg-red-50 text-red-700 border border-red-200; }
+  .status-progress { @apply bg-amber-50 text-amber-700 border border-amber-200; }
+  .status-awaiting { @apply bg-blue-50 text-blue-700 border border-blue-200; }
+  .status-won      { @apply bg-green-50 text-green-700 border border-green-200; }
+  .status-lost     { @apply bg-gray-50 text-gray-600 border border-gray-200; }
+  .status-spam     { @apply bg-slate-50 text-slate-500 border border-slate-200; }
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #C9A84C, #e5b54e, #b08a32);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .text-gradient-navy {
+    background: linear-gradient(135deg, #0A1628, #1e3a73);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .border-gradient-gold {
+    border-image: linear-gradient(135deg, #C9A84C, #e5b54e) 1;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+}
+
+/* ============================================================
+   LEAFLET MAP OVERRIDES
+   ============================================================ */
+.leaflet-popup-content-wrapper {
+  @apply rounded-xl shadow-luxury-lg border border-border;
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+.leaflet-popup-tip {
+  background: hsl(var(--card)) !important;
+}
+.leaflet-control-zoom a {
+  @apply text-navy-900;
+}
+.price-marker {
+  @apply bg-navy-900 text-cream-100 text-xs font-semibold px-2 py-1 rounded-full 
+         shadow-luxury border border-gold-500/30 whitespace-nowrap cursor-pointer
+         transition-all duration-200;
+}
+.price-marker:hover {
+  @apply bg-gold-500 text-navy-900;
+}
+
+/* ============================================================
+   EMBLA CAROUSEL
+   ============================================================ */
+.embla { overflow: hidden; }
+.embla__container { display: flex; }
+.embla__slide { flex: 0 0 100%; min-width: 0; }
+
+/* ============================================================
+   TIPTAP EDITOR
+   ============================================================ */
+.ProseMirror {
+  @apply min-h-[300px] p-4 outline-none text-foreground;
+  font-family: var(--font-body);
+  line-height: 1.7;
+}
+.ProseMirror h2 {
+  font-family: var(--font-display);
+  @apply text-2xl font-light mt-6 mb-3 text-foreground;
+}
+.ProseMirror h3 {
+  font-family: var(--font-display);
+  @apply text-xl font-normal mt-5 mb-2 text-foreground;
+}
+.ProseMirror h4 {
+  @apply text-base font-semibold mt-4 mb-2 text-foreground;
+}
+.ProseMirror p { @apply mb-3 text-muted-foreground; }
+.ProseMirror ul { @apply list-disc list-inside mb-3 space-y-1; }
+.ProseMirror ol { @apply list-decimal list-inside mb-3 space-y-1; }
+.ProseMirror blockquote {
+  @apply border-l-4 border-gold-500 pl-4 py-1 my-4 italic text-muted-foreground;
+}
+.ProseMirror a { @apply text-gold-600 underline; }
+.ProseMirror code {
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm;
+  font-family: var(--font-mono);
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  @apply text-muted-foreground/50 pointer-events-none float-left h-0;
+  content: attr(data-placeholder);
+}
+
+/* ============================================================
+   PRINT STYLES
+   ============================================================ */
+@media print {
+  .no-print { display: none !important; }
+  nav, footer, .admin-sidebar, .floating-actions { display: none !important; }
+  body { font-size: 12pt; color: #000; background: #fff; }
+  .property-print-header { border-bottom: 2pt solid #0A1628; margin-bottom: 1cm; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 9pt; }
+}
+
+/* ============================================================
+   SKIP-TO-CONTENT (Accessibility)
+   ============================================================ */
+.skip-to-content {
+  @apply absolute -top-full left-4 z-50
+         bg-gold-500 text-navy-900 font-semibold px-4 py-2 rounded-b-lg
+         transition-all duration-200;
+}
+.skip-to-content:focus {
+  @apply top-0;
+}
+
+/* ============================================================
+   COOKIE CONSENT BANNER
+   ============================================================ */
+.cookie-banner {
+  @apply fixed bottom-0 left-0 right-0 z-50
+         glass-dark border-t border-gold-500/20
+         px-4 py-4 sm:px-6;
+}

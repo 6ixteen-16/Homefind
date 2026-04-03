@@ -1,0 +1,405 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== AUTH ====================
+
+model User {
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  emailVerified        DateTime?
+  passwordHash         String?
+  name                 String
+  role                 Role                 @default(AGENT)
+  phone                String?
+  bio                  String?
+  photo                String?
+  isActive             Boolean              @default(true)
+  failedLoginAttempts  Int                  @default(0)
+  lockedUntil          DateTime?
+  totpSecret           String?
+  totpEnabled          Boolean              @default(false)
+  lastLoginAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  listings             Property[]           @relation("AgentListings")
+  assignedInquiries    Inquiry[]            @relation("AssignedInquiries")
+  inquiryNotes         InquiryNote[]
+  inquiryReplies       InquiryReply[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  resetTokens          PasswordResetToken[]
+  blogPosts            BlogPost[]
+
+  @@index([email])
+  @@index([role, isActive])
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  AGENT
+  EDITOR
+  VIEWER
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  expiresAt   DateTime
+  ipAddress   String?
+  userAgent   String?
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+}
+
+// ==================== PROPERTIES ====================
+
+model Property {
+  id               String           @id @default(cuid())
+  slug             String           @unique
+  title            String
+  listingType      ListingType
+  category         PropertyCategory
+  propertyType     String
+  status           PropertyStatus   @default(DRAFT)
+  price            Float
+  currency         String           @default("USD")
+  priceNegotiable  Boolean          @default(false)
+  priceUnit        String?
+  bedrooms         Int?
+  bathrooms        Int?
+  parkingSpaces    Int?
+  squareFootage    Float?
+  landSize         Float?
+  yearBuilt        Int?
+  furnishingStatus String?
+  floorNumber      Int?
+  totalFloors      Int?
+  description      String           @db.Text
+  address          String
+  city             String
+  area             String?
+  country          String
+  zipCode          String?
+  latitude         Float?
+  longitude        Float?
+  isFeatured       Boolean          @default(false)
+  views            Int              @default(0)
+  metaTitle        String?
+  metaDescription  String?
+  ogImageUrl       String?
+  videoUrl         String?
+  publishedAt      DateTime?
+  deletedAt        DateTime?
+  scheduledAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  agentId          String?
+  agent            User?            @relation("AgentListings", fields: [agentId], references: [id])
+
+  media            PropertyMedia[]
+  amenities        PropertyAmenity[]
+  inquiries        Inquiry[]
+
+  @@index([listingType, status, deletedAt])
+  @@index([city, area])
+  @@index([price])
+  @@index([isFeatured, status])
+  @@index([agentId])
+  @@index([createdAt])
+}
+
+enum ListingType {
+  SALE
+  RENT
+}
+
+enum PropertyCategory {
+  RESIDENTIAL
+  COMMERCIAL
+  LAND
+  SHORT_STAY
+}
+
+enum PropertyStatus {
+  DRAFT
+  PUBLISHED
+  UNDER_OFFER
+  SOLD
+  RENTED
+  ARCHIVED
+}
+
+model PropertyMedia {
+  id          String    @id @default(cuid())
+  propertyId  String
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  url         String
+  publicId    String
+  type        MediaType @default(IMAGE)
+  altText     String?
+  width       Int?
+  height      Int?
+  sizeBytes   Int?
+  sortOrder   Int       @default(0)
+  isFeatured  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([propertyId, sortOrder])
+}
+
+enum MediaType {
+  IMAGE
+  DOCUMENT
+}
+
+model Amenity {
+  id         String            @id @default(cuid())
+  name       String            @unique
+  icon       String?
+  category   String?
+  isActive   Boolean           @default(true)
+  properties PropertyAmenity[]
+
+  @@index([isActive])
+}
+
+model PropertyAmenity {
+  propertyId String
+  amenityId  String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity    Amenity  @relation(fields: [amenityId], references: [id])
+
+  @@id([propertyId, amenityId])
+}
+
+// ==================== INQUIRIES ====================
+
+model Inquiry {
+  id            String        @id @default(cuid())
+  type          InquiryType   @default(PROPERTY)
+  propertyId    String?
+  property      Property?     @relation(fields: [propertyId], references: [id])
+  name          String
+  email         String
+  phone         String?
+  contactMethod String?
+  subject       String?
+  message       String        @db.Text
+  status        InquiryStatus @default(NEW)
+  isSpam        Boolean       @default(false)
+  assignedToId  String?
+  assignedTo    User?         @relation("AssignedInquiries", fields: [assignedToId], references: [id])
+  ipAddress     String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  closedAt      DateTime?
+
+  notes    InquiryNote[]
+  replies  InquiryReply[]
+
+  @@index([status, assignedToId])
+  @@index([propertyId])
+  @@index([createdAt])
+  @@index([email])
+}
+
+enum InquiryType {
+  PROPERTY
+  GENERAL
+  VIEWING
+}
+
+enum InquiryStatus {
+  NEW
+  IN_PROGRESS
+  AWAITING_CLIENT
+  CLOSED_WON
+  CLOSED_LOST
+  SPAM
+}
+
+model InquiryNote {
+  id        String   @id @default(cuid())
+  inquiryId String
+  inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([inquiryId])
+}
+
+model InquiryReply {
+  id        String   @id @default(cuid())
+  inquiryId String
+  inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  sentById  String
+  sentBy    User     @relation(fields: [sentById], references: [id])
+  subject   String
+  body      String   @db.Text
+  sentAt    DateTime @default(now())
+
+  @@index([inquiryId])
+}
+
+// ==================== CONTENT ====================
+
+model BlogPost {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  title           String
+  excerpt         String
+  content         String     @db.Text
+  coverImageUrl   String?
+  status          PostStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  categories      String[]
+  tags            String[]
+  authorId        String
+  author          User       @relation(fields: [authorId], references: [id])
+  publishedAt     DateTime?
+  scheduledAt     DateTime?
+  readTime        Int?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([authorId])
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  name      String
+  title     String
+  bio       String?  @db.Text
+  photo     String?
+  phone     String?
+  email     String?
+  linkedin  String?
+  instagram String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+model Testimonial {
+  id          String   @id @default(cuid())
+  clientName  String
+  clientTitle String?
+  clientPhoto String?
+  rating      Int
+  text        String   @db.Text
+  propertyRef String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([isActive, sortOrder])
+}
+
+model FAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  category  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([isActive, sortOrder])
+}
+
+model Subscriber {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  isConfirmed Boolean  @default(false)
+  token       String?  @unique
+  createdAt   DateTime @default(now())
+
+  @@index([email])
+}
+
+// ==================== SYSTEM ====================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  prevValue  Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model SiteSettings {
+  id                String  @id @default("singleton")
+  siteName          String  @default("Prestige Properties")
+  tagline           String?
+  logoUrl           String?
+  faviconUrl        String?
+  phone             String?
+  email             String?
+  address           String?
+  whatsappNumber    String?
+  facebookUrl       String?
+  instagramUrl      String?
+  linkedinUrl       String?
+  twitterUrl        String?
+  youtubeUrl        String?
+  googleMapsEmbedUrl String?
+  footerCopyright   String?
+  notificationEmail String?
+  ga4MeasurementId  String?
+  turnstileSiteKey  String?
+  updatedAt         DateTime @updatedAt
+}
