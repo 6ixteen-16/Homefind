@@ -17,6 +17,8 @@ const cormorant = Cormorant_Garamond({
   preload: true,
 });
 
+
+
 const dmSans = DM_Sans({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
