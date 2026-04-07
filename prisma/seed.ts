@@ -54,7 +54,7 @@ async function main() {
       notificationEmail: "admin@prestigeproperties.com",
     },
   });
-  console.log("Site settings initialized");
+  console.log("✅ Site settings initialized");
 
   // ── Amenities ────────────────────────────────────────────
   const amenitiesData = [
@@ -82,7 +82,7 @@ async function main() {
       create: amenity,
     });
   }
-  console.log(` ${amenitiesData.length} amenities seeded`);
+  console.log(`✅ ${amenitiesData.length} amenities seeded`);
 
   // ── Sample Testimonials ──────────────────────────────────
   const testimonials = [
@@ -115,7 +115,7 @@ async function main() {
   for (const t of testimonials) {
     await prisma.testimonial.create({ data: t }).catch(() => {});
   }
-  console.log(`${testimonials.length} testimonials seeded`);
+  console.log(`✅ ${testimonials.length} testimonials seeded`);
 
   // ── Sample FAQs ──────────────────────────────────────────
   const faqs = [
