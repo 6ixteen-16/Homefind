@@ -179,7 +179,7 @@ export function AdminListingsClient({
             <button
               onClick={async () => {
                 if (!confirm(`Delete ${selected.size} listings?`)) return;
-                await Promise.all([...selected].map((id) => handleDelete(id)));
+                await Promise.all(Array.from(selected).map((id) => handleDelete(id)));
                 setSelected(new Set());
               }}
               className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 transition-colors"

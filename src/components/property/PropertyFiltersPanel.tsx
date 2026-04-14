@@ -33,6 +33,8 @@ interface FilterSection {
 const SECTIONS: FilterSection[] = [
   { id: "type", label: "Listing Type", defaultOpen: true },
   { id: "category", label: "Property Category", defaultOpen: true },
+  // BUG 6: proptype was missing — Property Type section was always collapsed with no way to open it
+  { id: "proptype", label: "Property Type", defaultOpen: true },
   { id: "price", label: "Price Range", defaultOpen: true },
   { id: "rooms", label: "Bedrooms & Bathrooms", defaultOpen: true },
   { id: "location", label: "Location", defaultOpen: true },
@@ -115,9 +117,10 @@ export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersP
   const debouncedApply = useDebouncedCallback(applyFilters, 400);
 
   // Auto-apply on changes
+  // BUG 7: keywords was missing from deps — resets & programmatic changes wouldn't retrigger
   useEffect(() => { debouncedApply(); }, [
     listingType, categories, propertyTypes, minPrice, maxPrice,
-    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities,
+    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities, keywords,
   ]);
 
   const hasFilters = !!(listingType || categories.length || propertyTypes.length ||

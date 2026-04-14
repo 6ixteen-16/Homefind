@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Maximize2, Grid3X3 } from "lucide-react";
 import Lightbox from "yet-another-react-lightbox";
@@ -10,7 +10,16 @@ import Fullscreen from "yet-another-react-lightbox/plugins/fullscreen";
 import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import "yet-another-react-lightbox/plugins/thumbnails.css";
 import useEmblaCarousel from "embla-carousel-react";
-import type { PropertyMedia } from "@prisma/client";
+// Define locally instead of @prisma/client to avoid requiring prisma generate
+interface PropertyMedia {
+  id: string;
+  url: string;
+  type: string;
+  altText: string | null;
+  width: number | null;
+  height: number | null;
+  sortOrder: number;
+}
 
 interface PropertyGalleryProps {
   media: PropertyMedia[];
@@ -24,18 +33,20 @@ export function PropertyGallery({ media, title }: PropertyGalleryProps) {
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // BUG 9: sync currentIndex on any slide change (drag, swipe, button)
+  useEffect(() => {
+    if (!emblaApi) return;
+    const onSelect = () => setCurrentIndex(emblaApi.selectedScrollSnap());
+    emblaApi.on("select", onSelect);
+    return () => { emblaApi.off("select", onSelect); };
+  }, [emblaApi]);
+
   const scrollPrev = useCallback(() => {
-    if (emblaApi) {
-      emblaApi.scrollPrev();
-      setCurrentIndex(emblaApi.selectedScrollSnap());
-    }
+    emblaApi?.scrollPrev();
   }, [emblaApi]);
 
   const scrollNext = useCallback(() => {
-    if (emblaApi) {
-      emblaApi.scrollNext();
-      setCurrentIndex(emblaApi.selectedScrollSnap());
-    }
+    emblaApi?.scrollNext();
   }, [emblaApi]);
 
   const openLightbox = (index: number) => {

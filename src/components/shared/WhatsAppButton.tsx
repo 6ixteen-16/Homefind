@@ -21,8 +21,8 @@ export function WhatsAppButton() {
       className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-[#25D366] text-white shadow-lg flex items-center justify-center hover:bg-[#20bd5a] transition-colors no-print"
     >
       <MessageCircle size={26} fill="currentColor" />
-      {/* Pulse ring */}
-      <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-25" />
+      {/* Pulse ring — pointer-events-none so it never intercepts clicks (BUG 13a) */}
+      <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-25 pointer-events-none" />
     </motion.a>
   );
 }

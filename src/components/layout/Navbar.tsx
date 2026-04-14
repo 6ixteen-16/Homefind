@@ -7,6 +7,7 @@ import { Menu, X, ChevronDown, Sun, Moon, Phone, Mail } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+// BUG 3: track dropdown ref at document level
 
 const navLinks = [
   { href: "/properties", label: "Properties" },
@@ -50,6 +51,18 @@ export function Navbar() {
     setOpenDropdown(null);
   }, [pathname]);
 
+  // BUG 3: close dropdown on click outside
+  useEffect(() => {
+    if (!openDropdown) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [openDropdown]);
+
   // Lock body scroll when mobile menu is open
   useEffect(() => {
     if (isMobileOpen) {
@@ -63,7 +76,8 @@ export function Navbar() {
   const isTransparent = isHomePage && !isScrolled;
 
   return (
-    <>
+    // BUG 1: single sticky wrapper so top bar + nav stick together
+    <div className="sticky top-0 z-50 w-full">
       {/* Top bar */}
       <div
         className={cn(
@@ -93,12 +107,13 @@ export function Navbar() {
       </div>
 
       {/* Main navbar */}
+      {/* BUG 2: gradient overlay for legibility in transparent state */}
       <header
         role="banner"
         className={cn(
-          "sticky top-0 z-50 w-full transition-all duration-500",
+          "w-full transition-all duration-500",
           isTransparent
-            ? "bg-transparent"
+            ? "bg-gradient-to-b from-black/40 to-transparent"
             : "bg-background/95 backdrop-blur-xl border-b border-border shadow-luxury"
         )}
       >
@@ -329,6 +344,6 @@ export function Navbar() {
           </>
         )}
       </AnimatePresence>
-    </>
+    </div>
   );
 }

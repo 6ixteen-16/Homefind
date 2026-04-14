@@ -1,3 +1,4 @@
+import "next-auth/jwt";
 import type {
   Property,
   PropertyMedia,

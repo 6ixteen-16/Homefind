@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Shield, Eye, Headphones, BadgeCheck, Search, Phone, Key, ArrowRight, Calendar } from "lucide-react";
+import { Shield, Eye, Headphones, BadgeCheck, Search, Phone, Key, ArrowRight, Clock } from "lucide-react";
 import Image from "next/image";
 import { formatDate } from "@/lib/utils";
 
@@ -295,7 +295,7 @@ export function LatestBlog({ posts }: { posts: BlogPost[] }) {
                   {post.readTime && (
                     <>
                       <span>·</span>
-                      <span className="flex items-center gap-1"><Calendar size={11} /> {post.readTime} min read</span>
+                      <span className="flex items-center gap-1"><Clock size={11} /> {post.readTime} min read</span>
                     </>
                   )}
                 </div>

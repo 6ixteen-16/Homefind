@@ -171,22 +171,27 @@ export function HeroSection() {
             </form>
           </div>
 
-          {/* Quick Stats */}
+          {/* Quick Stats — BUG 10: add flex-wrap + separator dividers for narrow screens */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.6 }}
-            className="flex items-center justify-center gap-8 mt-8 text-cream-400 text-sm"
+            className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 mt-8 text-cream-400 text-sm"
           >
             {[
               { label: "Properties Listed", value: "500+" },
               { label: "Happy Clients", value: "2,000+" },
               { label: "Cities Covered", value: "24" },
             ].map((item, i) => (
-              <div key={i} className="text-center">
-                <div className="text-cream-100 font-semibold text-lg font-display">{item.value}</div>
-                <div className="text-xs text-cream-500 mt-0.5">{item.label}</div>
-              </div>
+              <>
+                {i > 0 && (
+                  <span className="hidden sm:block text-gold-500/40 text-lg" aria-hidden="true">|</span>
+                )}
+                <div key={i} className="text-center">
+                  <div className="text-cream-100 font-semibold text-lg font-display">{item.value}</div>
+                  <div className="text-xs text-cream-500 mt-0.5">{item.label}</div>
+                </div>
+              </>
             ))}
           </motion.div>
         </motion.div>

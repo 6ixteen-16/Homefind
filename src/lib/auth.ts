@@ -12,7 +12,7 @@ const signInSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma) as any,
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 }, // 8 hours
   pages: {
     signIn: "/admin/login",
@@ -22,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.role = (user as any).role;
-        token.id = user.id;
+        token.id = user.id as string;
         token.photo = (user as any).photo;
       }
       return token;
@@ -110,15 +110,3 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
 });
 
-// Type augmentation
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      email: string;
-      name: string;
-      role: Role;
-      photo?: string;
-    };
-  }
-}

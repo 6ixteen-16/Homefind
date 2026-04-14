@@ -357,12 +357,11 @@ export function PropertiesPageClient({ searchParams }: PropertiesPageClientProps
                   <X size={18} />
                 </button>
               </div>
-              <div className="p-4">
-                <PropertyFiltersPanel
-                  searchParams={Object.fromEntries(urlParams.entries())}
-                  onApply={() => setMobileFiltersOpen(false)}
-                />
-              </div>
+              {/* BUG 8: removed extra p-4 wrapper — panel already has its own per-section padding */}
+              <PropertyFiltersPanel
+                searchParams={Object.fromEntries(urlParams.entries())}
+                onApply={() => setMobileFiltersOpen(false)}
+              />
             </motion.div>
           </>
         )}
