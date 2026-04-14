@@ -61,7 +61,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     select: { siteName: true },
   });
 
-  const siteName = settings?.siteName || "Prestige Properties";
+  const siteName = settings?.siteName || "HomeFind";
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
 
   // Send email to the original inquirer

@@ -92,9 +92,9 @@ export function Navbar() {
             <Phone size={12} />
             +1 (234) 567-8900
           </a>
-          <a href="mailto:info@prestigeproperties.com" className="flex items-center gap-1.5 hover:text-gold-400 transition-colors">
+          <a href="mailto:info@homefind.com" className="flex items-center gap-1.5 hover:text-gold-400 transition-colors">
             <Mail size={12} />
-            info@prestigeproperties.com
+            info@homefind.com
           </a>
         </div>
         <div className="flex items-center gap-4">
@@ -125,7 +125,7 @@ export function Navbar() {
           <Link
             href="/"
             className="flex flex-col leading-none group"
-            aria-label="Prestige Properties — Home"
+            aria-label="HomeFind — Home"
           >
             <span
               className={cn(
@@ -133,10 +133,10 @@ export function Navbar() {
                 isTransparent ? "text-cream-100" : "text-navy-900 dark:text-cream-100"
               )}
             >
-              Prestige
+              Home
             </span>
             <span className="text-gold-500 text-xs tracking-[0.3em] uppercase font-semibold -mt-0.5">
-              Properties
+              Find
             </span>
           </Link>
 

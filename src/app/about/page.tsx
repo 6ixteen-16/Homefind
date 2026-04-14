@@ -8,13 +8,13 @@ import { Mail, Phone, Linkedin, Instagram, ArrowRight } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "About Us",
-  description: "Learn about Prestige Properties — our story, team, values, and commitment to exceptional real estate service.",
+  description: "Learn about HomeFind — our story, team, values, and commitment to exceptional real estate service.",
 };
 
 export const revalidate = 3600;
 
 const MILESTONES = [
-  { year: "2012", title: "Founded", desc: "Prestige Properties was established with a vision to redefine real estate in the region." },
+  { year: "2012", title: "Founded", desc: "HomeFind was established with a vision to redefine real estate in the region." },
   { year: "2015", title: "100th Sale", desc: "Reached our 100th successful property sale, a testament to our growing reputation." },
   { year: "2018", title: "Expanded Services", desc: "Launched full property management and investment advisory services." },
   { year: "2021", title: "Digital Platform", desc: "Launched our industry-leading digital property search platform." },
@@ -55,7 +55,7 @@ export default async function AboutPage() {
                 <span className="italic text-gold-400">Driven by Excellence.</span>
               </h1>
               <p className="text-cream-300 text-lg leading-relaxed max-w-2xl">
-                For over a decade, Prestige Properties has been the trusted partner for buyers, sellers,
+                For over a decade, HomeFind has been the trusted partner for buyers, sellers,
                 and investors seeking exceptional real estate across the region. We combine deep market
                 expertise with a genuine commitment to every client's success.
               </p>

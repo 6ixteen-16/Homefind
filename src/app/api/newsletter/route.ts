@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
 
     sendEmail({
       to: email,
-      subject: `Welcome to ${settings?.siteName || "Prestige Properties"}!`,
+      subject: `Welcome to ${settings?.siteName || "HomeFind"}!`,
       html: NewsletterWelcomeEmail({
-        siteName: settings?.siteName || "Prestige Properties",
+        siteName: settings?.siteName || "HomeFind",
         siteUrl: process.env.NEXT_PUBLIC_SITE_URL || "",
       }),
     }).catch(console.error);

@@ -5,7 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "How Prestige Properties collects, uses, and protects your personal data.",
+  description: "How HomeFind collects, uses, and protects your personal data.",
   robots: { index: false },
 };
 
@@ -36,8 +36,8 @@ export default function PrivacyPolicyPage() {
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">1. Who We Are</h2>
-                <p>Prestige Properties (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is a real estate agency. This Privacy Policy explains how we collect and use your personal data when you visit our website or use our services.</p>
-                <p className="mt-2">Contact: <a href="mailto:info@prestigeproperties.com" className="text-gold-600 hover:underline">info@prestigeproperties.com</a></p>
+                <p>HomeFind (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is a real estate agency. This Privacy Policy explains how we collect and use your personal data when you visit our website or use our services.</p>
+                <p className="mt-2">Contact: <a href="mailto:info@homefind.com" className="text-gold-600 hover:underline">info@homefind.com</a></p>
               </div>
 
               <div>
@@ -94,7 +94,7 @@ export default function PrivacyPolicyPage() {
                   <li>Object to or restrict processing of your data</li>
                   <li>Receive a copy of your data in a portable format</li>
                 </ul>
-                <p className="mt-3">To exercise any of these rights, email us at <a href="mailto:privacy@prestigeproperties.com" className="text-gold-600 hover:underline">privacy@prestigeproperties.com</a>. We will respond within 30 days.</p>
+                <p className="mt-3">To exercise any of these rights, email us at <a href="mailto:privacy@homefind.com" className="text-gold-600 hover:underline">privacy@homefind.com</a>. We will respond within 30 days.</p>
               </div>
 
               <div>
@@ -106,10 +106,10 @@ export default function PrivacyPolicyPage() {
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">8. Contact</h2>
                 <p>Questions about this policy? Contact our data controller:</p>
                 <address className="not-italic mt-2 text-sm">
-                  Prestige Properties<br />
+                  HomeFind<br />
                   123 Business District, Suite 400<br />
                   Kampala, Uganda<br />
-                  <a href="mailto:privacy@prestigeproperties.com" className="text-gold-600 hover:underline">privacy@prestigeproperties.com</a>
+                  <a href="mailto:privacy@homefind.com" className="text-gold-600 hover:underline">privacy@homefind.com</a>
                 </address>
               </div>
 

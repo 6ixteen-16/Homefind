@@ -5,14 +5,14 @@ import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
   title: "Cookie Policy",
-  description: "How Prestige Properties uses cookies on its website.",
+  description: "How HomeFind uses cookies on its website.",
   robots: { index: false },
 };
 
 const COOKIES = [
   {
     name: "__session",
-    provider: "Prestige Properties",
+    provider: "HomeFind",
     purpose: "Keeps you logged in to the admin dashboard. Required for authentication.",
     duration: "8 hours",
     category: "Strictly Necessary",
@@ -33,21 +33,21 @@ const COOKIES = [
   },
   {
     name: "pp-cookie-consent",
-    provider: "Prestige Properties",
+    provider: "HomeFind",
     purpose: "Stores your cookie preferences so we don't show the banner on every visit.",
     duration: "1 year",
     category: "Strictly Necessary",
   },
   {
     name: "property-view",
-    provider: "Prestige Properties (localStorage)",
+    provider: "HomeFind (localStorage)",
     purpose: "Remembers whether you prefer grid or list view on the properties page.",
     duration: "Persistent (localStorage)",
     category: "Functionality",
   },
   {
     name: "property-favorites",
-    provider: "Prestige Properties (localStorage)",
+    provider: "HomeFind (localStorage)",
     purpose: "Stores the list of properties you have saved/favourited.",
     duration: "Persistent (localStorage)",
     category: "Functionality",
@@ -118,7 +118,7 @@ export default function CookiePolicyPage() {
             <div className="prose-luxury max-w-3xl">
               <p className="text-foreground/80 leading-relaxed">
                 This Cookie Policy explains what cookies are, which ones we use on the
-                Prestige Properties website, and how you can control them. For broader
+                HomeFind website, and how you can control them. For broader
                 information on how we handle your data, please see our{" "}
                 <Link href="/privacy-policy" className="text-gold-600 hover:underline">
                   Privacy Policy
@@ -325,10 +325,10 @@ export default function CookiePolicyPage() {
               <p className="text-sm text-muted-foreground">
                 If you have any questions about our use of cookies, please contact us at{" "}
                 <a
-                  href="mailto:privacy@prestigeproperties.com"
+                  href="mailto:privacy@homefind.com"
                   className="text-gold-600 hover:underline"
                 >
-                  privacy@prestigeproperties.com
+                  privacy@homefind.com
                 </a>{" "}
                 or see our full{" "}
                 <Link href="/privacy-policy" className="text-gold-600 hover:underline">

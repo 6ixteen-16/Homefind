@@ -3,7 +3,7 @@ import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
-export const metadata: Metadata = { title: "Admin Login — Prestige Properties" };
+export const metadata: Metadata = { title: "Admin Login — HomeFind" };
 
 export default async function AdminLoginPage() {
   const session = await auth();
@@ -17,7 +17,7 @@ export default async function AdminLoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-10">
-          <div className="font-display text-4xl font-light text-cream-100 tracking-wide">Prestige</div>
+          <div className="font-display text-4xl font-light text-cream-100 tracking-wide">HomeFind</div>
           <div className="text-gold-400 text-xs tracking-[0.3em] uppercase font-semibold mt-1">Admin Portal</div>
         </div>
 

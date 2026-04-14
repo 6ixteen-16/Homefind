@@ -1,6 +1,6 @@
 # Roadmap: Multi-Tenant Real Estate Marketplace
 
-This document outlines the steps to transform the Prestige Properties application from a "Single Agency" site into a **Multi-Vendor Marketplace** where multiple "Property Masters" (Agencies) can list and manage their own diverse properties.
+This document outlines the steps to transform the HomeFind application from a "Single Agency" site into a **Multi-Vendor Marketplace** where multiple "Property Masters" (Agencies) can list and manage their own diverse properties.
 
 ## Phase 1: Database Multi-Tenancy
 Currently, everything is under one roof. We need to "silo" the data so Property Masters only see their own listings.

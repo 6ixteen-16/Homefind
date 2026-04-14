@@ -78,7 +78,7 @@ export function InquiryConfirmationEmail({
     <a href="${siteUrl}/properties" class="btn btn-gold">Browse All Properties</a>
     
     <p style="font-size:12px;color:#999;margin-top:32px;">
-      If you did not submit this inquiry, please ignore this email or <a href="mailto:info@prestigeproperties.com" style="color:#C9A84C;">contact us</a>.
+      If you did not submit this inquiry, please ignore this email or <a href="mailto:info@homefind.com" style="color:#C9A84C;">contact us</a>.
     </p>
   `;
 

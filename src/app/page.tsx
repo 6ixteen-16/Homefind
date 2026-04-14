@@ -10,9 +10,9 @@ import { prisma } from "@/lib/prisma";
 import type { PropertyCardData } from "@/types";
 
 export const metadata: Metadata = {
-  title: "Prestige Properties — Luxury Real Estate",
+  title: "HomeFind — Luxury Real Estate",
   description:
-    "Discover exceptional residential and commercial properties. Prestige Properties connects discerning buyers and renters with the finest real estate across the region.",
+    "Discover exceptional residential and commercial properties. HomeFind connects discerning buyers and renters with the finest real estate across the region.",
 };
 
 // ISR — revalidate every 60 seconds

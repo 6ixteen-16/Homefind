@@ -1,6 +1,6 @@
 {
-  "name": "Prestige Properties",
-  "short_name": "Prestige",
+  "name": "HomeFind",
+  "short_name": "HomeFind",
   "description": "Discover exceptional residential and commercial properties",
   "start_url": "/",
   "display": "standalone",

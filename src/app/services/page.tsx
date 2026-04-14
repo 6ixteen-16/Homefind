@@ -10,7 +10,7 @@ import {
 export const metadata: Metadata = {
   title: "Our Services",
   description:
-    "Comprehensive real estate services — property sales, rentals, management, valuations, and investment advisory from Prestige Properties.",
+    "Comprehensive real estate services — property sales, rentals, management, valuations, and investment advisory from HomeFind.",
 };
 
 export const revalidate = 3600;
@@ -93,7 +93,7 @@ export default async function ServicesPage() {
             </h1>
             <p className="text-cream-300 text-lg max-w-2xl leading-relaxed">
               From your first property search to long-term portfolio management —
-              Prestige Properties provides end-to-end real estate solutions.
+              HomeFind provides end-to-end real estate solutions.
             </p>
           </div>
         </section>

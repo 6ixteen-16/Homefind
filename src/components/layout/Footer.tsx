@@ -43,10 +43,10 @@ export function Footer() {
           <div className="lg:col-span-1">
             <Link href="/" className="inline-flex flex-col mb-6">
               <span className="font-display text-3xl font-light text-cream-100 tracking-wide">
-                Prestige
+                Home
               </span>
               <span className="text-gold-500 text-xs tracking-[0.3em] uppercase font-semibold -mt-1">
-                Properties
+                Find
               </span>
             </Link>
             <p className="text-sm text-cream-400 leading-relaxed mb-6 max-w-xs">
@@ -64,11 +64,11 @@ export function Footer() {
                 +1 (234) 567-8900
               </a>
               <a
-                href="mailto:info@prestigeproperties.com"
+                href="mailto:info@homefind.com"
                 className="flex items-center gap-3 text-cream-300 hover:text-gold-400 transition-colors"
               >
                 <Mail size={15} className="text-gold-500 shrink-0" />
-                info@prestigeproperties.com
+                info@homefind.com
               </a>
               <div className="flex items-start gap-3 text-cream-300">
                 <MapPin size={15} className="text-gold-500 shrink-0 mt-0.5" />
@@ -145,7 +145,7 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Copyright */}
           <p className="text-xs text-cream-500 order-2 sm:order-1">
-            © {new Date().getFullYear()} Prestige Properties. All rights reserved.
+            © {new Date().getFullYear()} HomeFind. All rights reserved.
           </p>
 
           {/* Legal Links */}

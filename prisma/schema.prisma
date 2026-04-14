@@ -383,7 +383,7 @@ model AuditLog {
 
 model SiteSettings {
   id                String  @id @default("singleton")
-  siteName          String  @default("Prestige Properties")
+  siteName          String  @default("HomeFind")
   tagline           String?
   logoUrl           String?
   faviconUrl        String?

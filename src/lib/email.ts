@@ -33,7 +33,7 @@ export async function sendEmail({ to, subject, html, from }: SendEmailOptions) {
   const fromAddress =
     from ||
     process.env.EMAIL_FROM ||
-    "Prestige Properties <noreply@prestigeproperties.com>";
+    "HomeFind <noreply@homefind.com>";
 
   try {
     const t = getTransporter();
@@ -83,8 +83,8 @@ export function baseEmailTemplate(content: string, siteName: string, siteUrl: st
 <body>
 <div class="container">
   <div class="header">
-    <div class="header-title">Prestige</div>
-    <div class="header-sub">Properties</div>
+    <div class="header-title">Home</div>
+    <div class="header-sub">Find</div>
   </div>
   <div class="body">
     ${content}

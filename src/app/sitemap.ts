@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://prestigeproperties.com";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://homefind.com";
   const now = new Date();
 
   // Static pages

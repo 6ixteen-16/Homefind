@@ -10,7 +10,7 @@ import { Calendar, Clock, ArrowRight } from "lucide-react";
 export const metadata: Metadata = {
   title: "Blog & News",
   description:
-    "Property market insights, buying guides, and real estate news from Prestige Properties.",
+    "Property market insights, buying guides, and real estate news from HomeFind.",
 };
 
 export const revalidate = 3600;

@@ -10,10 +10,10 @@ async function main() {
   const passwordHash = await bcrypt.hash("Admin@123!", 12);
 
   const superAdmin = await prisma.user.upsert({
-    where: { email: "admin@prestigeproperties.com" },
+    where: { email: "admin@homefind.com" },
     update: {},
     create: {
-      email: "admin@prestigeproperties.com",
+      email: "admin@homefind.com",
       name: "Super Admin",
       passwordHash,
       role: "SUPER_ADMIN",
@@ -25,10 +25,10 @@ async function main() {
   // ── Agent ────────────────────────────────────────────────
   const agentHash = await bcrypt.hash("Agent@123!", 12);
   const agent = await prisma.user.upsert({
-    where: { email: "agent@prestigeproperties.com" },
+    where: { email: "agent@homefind.com" },
     update: {},
     create: {
-      email: "agent@prestigeproperties.com",
+      email: "agent@homefind.com",
       name: "John Williams",
       passwordHash: agentHash,
       role: "AGENT",
@@ -45,13 +45,13 @@ async function main() {
     update: {},
     create: {
       id: "singleton",
-      siteName: "Prestige Properties",
+      siteName: "HomeFind",
       tagline: "Exceptional Properties. Exceptional Service.",
       phone: "+1 (234) 567-8900",
-      email: "info@prestigeproperties.com",
+      email: "info@homefind.com",
       address: "123 Business District, Suite 400, Kampala, Uganda",
       whatsappNumber: "1234567890",
-      notificationEmail: "admin@prestigeproperties.com",
+      notificationEmail: "admin@homefind.com",
     },
   });
   console.log("✅ Site settings initialized");
@@ -90,7 +90,7 @@ async function main() {
       clientName: "Sarah Johnson",
       clientTitle: "Homeowner",
       rating: 5,
-      text: "Prestige Properties made finding our dream home effortless. Their team was professional, responsive, and truly understood what we were looking for.",
+      text: "HomeFind made finding our dream home effortless. Their team was professional, responsive, and truly understood what we were looking for.",
       isActive: true,
       sortOrder: 1,
     },
@@ -98,7 +98,7 @@ async function main() {
       clientName: "Michael Okonkwo",
       clientTitle: "Property Investor",
       rating: 5,
-      text: "I've worked with many agencies, but Prestige stands out for their market knowledge and transparent communication. Highly recommended for investors.",
+      text: "I've worked with many agencies, but HomeFind stands out for their market knowledge and transparent communication. Highly recommended for investors.",
       isActive: true,
       sortOrder: 2,
     },
@@ -195,8 +195,8 @@ async function main() {
 
   console.log("\n🎉 Database seeded successfully!");
   console.log("\n📋 Login credentials:");
-  console.log("   Super Admin: admin@prestigeproperties.com / Admin@123!");
-  console.log("   Agent:       agent@prestigeproperties.com / Agent@123!");
+  console.log("   Super Admin: admin@homefind.com / Admin@123!");
+  console.log("   Agent:       agent@homefind.com / Agent@123!");
   console.log("\n⚠️  CHANGE THESE PASSWORDS IMMEDIATELY after first login!\n");
 }
 

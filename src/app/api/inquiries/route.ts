@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
 
     // Send emails (fire and forget — don't block response)
     const notificationEmail = settings?.notificationEmail || process.env.ADMIN_EMAIL;
-    const siteName = settings?.siteName || "Prestige Properties";
+    const siteName = settings?.siteName || "HomeFind";
 
     if (notificationEmail) {
       sendEmail({

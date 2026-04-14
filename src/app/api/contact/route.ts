@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const siteName = settings?.siteName || "Prestige Properties";
+    const siteName = settings?.siteName || "HomeFind";
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
     const notifEmail = settings?.notificationEmail || process.env.ADMIN_EMAIL;
 

@@ -108,7 +108,7 @@ export default function AdminSettingsPage() {
         <section className="bg-card rounded-xl border border-border p-6 space-y-4 shadow-luxury">
           <h2 className="font-semibold text-foreground">Branding</h2>
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Company Name *" name="siteName" placeholder="Prestige Properties" />
+            <Field label="Company Name *" name="siteName" placeholder="HomeFind" />
             <Field label="Tagline" name="tagline" placeholder="Exceptional Properties. Exceptional Service." />
           </div>
         </section>

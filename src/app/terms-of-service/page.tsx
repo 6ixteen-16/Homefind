@@ -5,7 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "Terms and conditions for using the Prestige Properties website and services.",
+  description: "Terms and conditions for using the HomeFind website and services.",
   robots: { index: false },
 };
 
@@ -34,7 +34,7 @@ export default function TermsPage() {
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">1. Acceptance of Terms</h2>
-                <p>By accessing or using the Prestige Properties website, you agree to be bound by these Terms of Service. If you do not agree, please do not use this site.</p>
+                <p>By accessing or using the HomeFind website, you agree to be bound by these Terms of Service. If you do not agree, please do not use this site.</p>
               </div>
 
               <div>
@@ -50,17 +50,17 @@ export default function TermsPage() {
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">3. Property Listings</h2>
-                <p>Property details on this site are provided by our agents and property owners. While we strive for accuracy, Prestige Properties makes no warranty as to the completeness or accuracy of any listing. You should independently verify all property details, prices, and availability before making any decisions.</p>
+                <p>Property details on this site are provided by our agents and property owners. While we strive for accuracy, HomeFind makes no warranty as to the completeness or accuracy of any listing. You should independently verify all property details, prices, and availability before making any decisions.</p>
               </div>
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">4. Intellectual Property</h2>
-                <p>All content on this website — including text, images, logos, and design — is owned by or licensed to Prestige Properties. You may not reproduce, distribute, or create derivative works without our written permission.</p>
+                <p>All content on this website — including text, images, logos, and design — is owned by or licensed to HomeFind. You may not reproduce, distribute, or create derivative works without our written permission.</p>
               </div>
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">5. Limitation of Liability</h2>
-                <p>To the maximum extent permitted by law, Prestige Properties shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of this website or reliance on any information contained herein.</p>
+                <p>To the maximum extent permitted by law, HomeFind shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of this website or reliance on any information contained herein.</p>
               </div>
 
               <div>
@@ -80,7 +80,7 @@ export default function TermsPage() {
 
               <div>
                 <h2 className="font-display text-2xl font-light text-foreground mb-3">9. Contact</h2>
-                <p>For questions about these Terms, contact us at <a href="mailto:legal@prestigeproperties.com" className="text-gold-600 hover:underline">legal@prestigeproperties.com</a>.</p>
+                <p>For questions about these Terms, contact us at <a href="mailto:legal@homefind.com" className="text-gold-600 hover:underline">legal@homefind.com</a>.</p>
               </div>
 
             </div>

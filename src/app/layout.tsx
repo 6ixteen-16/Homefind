@@ -36,23 +36,23 @@ const dmMono = DM_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "https://prestigeproperties.com"
+    process.env.NEXT_PUBLIC_SITE_URL || "https://homefind.com"
   ),
   title: {
-    default: "Prestige Properties — Luxury Real Estate",
-    template: "%s | Prestige Properties",
+    default: "HomeFind — Luxury Real Estate",
+    template: "%s | HomeFind",
   },
   description:
-    "Discover exceptional residential and commercial properties. Prestige Properties connects discerning buyers and renters with the finest real estate.",
+    "Discover exceptional residential and commercial properties. HomeFind connects discerning buyers and renters with the finest real estate.",
   keywords: ["real estate", "luxury properties", "buy property", "rent property", "commercial real estate"],
-  authors: [{ name: "Prestige Properties" }],
-  creator: "Prestige Properties",
+  authors: [{ name: "HomeFind" }],
+  creator: "HomeFind",
   openGraph: {
     type: "website",
     locale: "en_US",
     url: "/",
-    siteName: "Prestige Properties",
-    title: "Prestige Properties — Luxury Real Estate",
+    siteName: "HomeFind",
+    title: "HomeFind — Luxury Real Estate",
     description:
       "Discover exceptional residential and commercial properties.",
     images: [
@@ -60,13 +60,13 @@ export const metadata: Metadata = {
         url: "/og-default.jpg",
         width: 1200,
         height: 630,
-        alt: "Prestige Properties",
+        alt: "HomeFind",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Prestige Properties — Luxury Real Estate",
+    title: "HomeFind — Luxury Real Estate",
     description: "Discover exceptional residential and commercial properties.",
     images: ["/og-default.jpg"],
   },

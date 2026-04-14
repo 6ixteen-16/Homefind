@@ -1,4 +1,4 @@
-# Prestige Properties — Handover Documentation
+# HomeFind — Handover Documentation
 
 ## Project Overview
 
@@ -38,8 +38,8 @@ A full-stack, production-ready real estate web application built on a 100% free-
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/your-org/prestige-properties.git
-cd prestige-properties
+git clone https://github.com/your-org/homefind.git
+cd homefind
 
 # 2. Install dependencies
 npm install
@@ -64,8 +64,8 @@ npm run dev
 Open http://localhost:3000 for the site and http://localhost:3000/admin for the admin.
 
 **Initial login credentials (CHANGE IMMEDIATELY):**
-- Super Admin: `admin@prestigeproperties.com` / `Admin@123!`
-- Agent: `agent@prestigeproperties.com` / `Agent@123!`
+- Super Admin: `admin@homefind.com` / `Admin@123!`
+- Agent: `agent@homefind.com` / `Agent@123!`
 
 ---
 

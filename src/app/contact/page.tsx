@@ -7,12 +7,12 @@ import { Phone, Mail, MapPin, Clock, Facebook, Instagram, Linkedin, Twitter } fr
 
 export const metadata: Metadata = {
   title: "Contact Us",
-  description: "Get in touch with Prestige Properties. We're here to help you find your perfect property.",
+  description: "Get in touch with HomeFind. We're here to help you find your perfect property.",
 };
 
 const CONTACT_INFO = [
   { icon: Phone, label: "Phone", value: "+1 (234) 567-8900", href: "tel:+1234567890" },
-  { icon: Mail, label: "Email", value: "info@prestigeproperties.com", href: "mailto:info@prestigeproperties.com" },
+  { icon: Mail, label: "Email", value: "info@homefind.com", href: "mailto:info@homefind.com" },
   { icon: MapPin, label: "Address", value: "123 Business District, Suite 400, Kampala, Uganda", href: null },
   { icon: Clock, label: "Hours", value: "Mon–Fri: 9am–6pm · Sat: 10am–3pm", href: null },
 ];
@@ -21,9 +21,9 @@ export default function ContactPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
-    name: "Prestige Properties",
+    name: "HomeFind",
     telephone: "+1234567890",
-    email: "info@prestigeproperties.com",
+    email: "info@homefind.com",
     address: {
       "@type": "PostalAddress",
       streetAddress: "123 Business District, Suite 400",
