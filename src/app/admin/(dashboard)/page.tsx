@@ -10,9 +10,24 @@ export const metadata: Metadata = { title: "Dashboard — Admin" };
 
 export const dynamic = "force-dynamic";
 
-async function getDashboardStats(userId: string, role: string) {
+async function getDashboardStats(userId: string, role: string, agencyId: string | null) {
+  const isGlobalAdmin = role === "SUPER_ADMIN" || role === "ADMIN";
   const isAgentOnly = role === "AGENT";
+
+  // Base filters
+  const agencyFilter = !isGlobalAdmin ? { agencyId } : {};
   const agentFilter = isAgentOnly ? { agentId: userId } : {};
+
+  // For inquiries, check property ownership or assignment
+  const inquiryFilter: any = {
+    ...(isGlobalAdmin ? {} : {
+      OR: [
+        { property: { agencyId } },
+        { assignedTo: { agencyId } }
+      ]
+    }),
+    ...(isAgentOnly ? { assignedToId: userId } : {})
+  };
 
   const [
     totalListings,
@@ -23,22 +38,22 @@ async function getDashboardStats(userId: string, role: string) {
     recentInquiries,
     recentAuditLogs,
   ] = await Promise.all([
-    prisma.property.count({ where: { ...agentFilter, deletedAt: null } }),
-    prisma.property.count({ where: { ...agentFilter, status: "PUBLISHED", deletedAt: null } }),
+    prisma.property.count({ where: { ...agencyFilter, ...agentFilter, deletedAt: null } }),
+    prisma.property.count({ where: { ...agencyFilter, ...agentFilter, status: "PUBLISHED", deletedAt: null } }),
     prisma.inquiry.count({
-      where: { status: "NEW", ...(isAgentOnly ? { assignedToId: userId } : {}) },
+      where: { ...inquiryFilter, status: "NEW" },
     }),
     prisma.inquiry.count({
-      where: isAgentOnly ? { assignedToId: userId } : {},
+      where: inquiryFilter,
     }),
     prisma.property.findMany({
-      where: { ...agentFilter, status: "PUBLISHED", deletedAt: null },
+      where: { ...agencyFilter, ...agentFilter, status: "PUBLISHED", deletedAt: null },
       orderBy: { views: "desc" },
       take: 5,
       select: { id: true, slug: true, title: true, views: true, createdAt: true },
     }),
     prisma.inquiry.findMany({
-      where: isAgentOnly ? { assignedToId: userId } : {},
+      where: inquiryFilter,
       orderBy: { createdAt: "desc" },
       take: 8,
       include: {
@@ -48,6 +63,7 @@ async function getDashboardStats(userId: string, role: string) {
     }),
     !isAgentOnly
       ? prisma.auditLog.findMany({
+          where: !isGlobalAdmin ? { user: { agencyId } } : {},
           orderBy: { createdAt: "desc" },
           take: 10,
           include: { user: { select: { name: true, photo: true } } },
@@ -70,7 +86,11 @@ export default async function AdminDashboardPage() {
   const session = await auth();
   if (!session?.user) return null;
 
-  const stats = await getDashboardStats(session.user.id, session.user.role);
+  const stats = await getDashboardStats(
+    session.user.id,
+    session.user.role,
+    session.user.agencyId ?? null
+  );
   const isAgent = session.user.role === "AGENT";
 
   const statCards = [

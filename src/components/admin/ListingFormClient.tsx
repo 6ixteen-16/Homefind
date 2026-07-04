@@ -39,6 +39,7 @@ const schema = z.object({
   metaDescription: z.string().optional().nullable(),
   videoUrl:        z.string().url().optional().nullable().or(z.literal("")),
   agentId:         z.string().optional().nullable(),
+  agencyId:        z.string().optional().nullable(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -47,17 +48,19 @@ const STEPS = ["Basic Info", "Location", "Details", "Description", "SEO & Publis
 
 interface Amenity  { id: string; name: string; category: string | null }
 interface Agent    { id: string; name: string }
+interface Agency   { id: string; name: string }
 
 interface ListingFormClientProps {
   listing:       any | null;
   amenities:     Amenity[];
   agents:        Agent[];
+  agencies:      Agency[];
   currentUserId: string;
   userRole:      Role;
 }
 
 export function ListingFormClient({
-  listing, amenities, agents, currentUserId, userRole,
+  listing, amenities, agents, agencies, currentUserId, userRole,
 }: ListingFormClientProps) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -401,6 +404,18 @@ export function ListingFormClient({
                 <option value="">Unassigned</option>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
+            </div>
+          )}
+          {userRole === "SUPER_ADMIN" && agencies.length > 0 && (
+            <div className="bg-card rounded-xl border border-border shadow-luxury p-6">
+              <h2 className="font-semibold text-foreground mb-3">Assign Agency</h2>
+              <select {...register("agencyId")} className="input-luxury text-sm">
+                <option value="">No Agency (System)</option>
+                {agencies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <p className="text-2xs text-muted-foreground mt-2">
+                Super Admins can override the default agency assignment.
+              </p>
             </div>
           )}
         </div>

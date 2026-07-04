@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, UserCheck, UserX, ChevronDown } from "lucide-react";
+import { Shield, UserCheck, UserX, Building2 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 
@@ -24,15 +24,22 @@ interface UserRow {
   lastLoginAt: Date | null;
   createdAt: Date;
   photo: string | null;
+  agencyId: string | null;
   _count: { listings: number; assignedInquiries: number };
+}
+
+interface Agency {
+  id: string;
+  name: string;
 }
 
 interface AdminUsersClientProps {
   users: UserRow[];
+  agencies: Agency[];
   currentUserId: string;
 }
 
-export function AdminUsersClient({ users, currentUserId }: AdminUsersClientProps) {
+export function AdminUsersClient({ users, agencies, currentUserId }: AdminUsersClientProps) {
   const router = useRouter();
   const [updating, setUpdating] = useState<string | null>(null);
 
@@ -62,8 +69,8 @@ export function AdminUsersClient({ users, currentUserId }: AdminUsersClientProps
             <tr className="border-b border-border bg-muted/40">
               <th className="text-left px-5 py-3 font-semibold text-foreground">User</th>
               <th className="text-left px-4 py-3 font-semibold text-foreground hidden md:table-cell">Role</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground hidden lg:table-cell">Activity</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground hidden xl:table-cell">Last Login</th>
+              <th className="text-left px-4 py-3 font-semibold text-foreground hidden lg:table-cell">Agency</th>
+              <th className="text-left px-4 py-3 font-semibold text-foreground hidden xl:table-cell">Stats</th>
               <th className="text-left px-4 py-3 font-semibold text-foreground">Status</th>
               <th className="px-4 py-3 font-semibold text-foreground text-right">Actions</th>
             </tr>
@@ -104,13 +111,32 @@ export function AdminUsersClient({ users, currentUserId }: AdminUsersClientProps
                   </span>
                 </td>
 
-                <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground text-xs">
-                  <div>{user._count.listings} listing{user._count.listings !== 1 ? "s" : ""}</div>
-                  <div>{user._count.assignedInquiries} inquir{user._count.assignedInquiries !== 1 ? "ies" : "y"}</div>
+                <td className="px-4 py-3 hidden lg:table-cell">
+                  {user.id !== currentUserId ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        defaultValue={user.agencyId || ""}
+                        disabled={updating === user.id}
+                        onChange={(e) => updateUser(user.id, { agencyId: e.target.value || null })}
+                        className="text-xs bg-background border border-border rounded-lg px-2 py-1 text-foreground focus:outline-none focus:border-gold-500 transition-colors disabled:opacity-50 max-w-[150px]"
+                      >
+                        <option value="">No Agency</option>
+                        {agencies.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                       <Shield size={12} className="text-gold-500" />
+                       System Admin
+                    </div>
+                  )}
                 </td>
 
-                <td className="px-4 py-3 hidden xl:table-cell text-xs text-muted-foreground">
-                  {user.lastLoginAt ? formatDate(user.lastLoginAt, "relative") : "Never"}
+                <td className="px-4 py-3 hidden xl:table-cell text-muted-foreground text-xs">
+                  <div>{user._count.listings} listing{user._count.listings !== 1 ? "s" : ""}</div>
+                  <div>{user._count.assignedInquiries} inquir{user._count.assignedInquiries !== 1 ? "ies" : "y"}</div>
                 </td>
 
                 <td className="px-4 py-3">
@@ -135,7 +161,7 @@ export function AdminUsersClient({ users, currentUserId }: AdminUsersClientProps
                         aria-label={`Change role for ${user.name}`}
                         className="text-xs bg-background border border-border rounded-lg px-2 py-1 text-foreground focus:outline-none focus:border-gold-500 transition-colors disabled:opacity-50"
                       >
-                        {["SUPER_ADMIN", "ADMIN", "AGENT", "EDITOR", "VIEWER"].map((r) => (
+                        {["SUPER_ADMIN", "ADMIN", "AGENCY_ADMIN", "AGENT", "EDITOR", "VIEWER"].map((r) => (
                           <option key={r} value={r}>{r.replace("_", " ")}</option>
                         ))}
                       </select>

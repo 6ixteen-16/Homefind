@@ -5,7 +5,7 @@ import { z } from "zod";
 import { generateSlug } from "@/lib/utils";
 import type { Prisma } from "@prisma/client";
 
-const ALLOWED_ROLES = ["SUPER_ADMIN", "ADMIN", "AGENT"];
+const ALLOWED_ROLES = ["SUPER_ADMIN", "ADMIN", "AGENCY_ADMIN", "AGENT"];
 
 // ===== GET /api/admin/listings =====
 export async function GET(request: NextRequest) {
@@ -20,9 +20,12 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status");
   const search = searchParams.get("search");
 
+  const isGlobalAdmin = session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN";
   const isAgent = session.user.role === "AGENT";
+
   const where: Prisma.PropertyWhereInput = {
     deletedAt: null,
+    ...(!isGlobalAdmin ? { agencyId: session.user.agencyId } : {}),
     ...(isAgent ? { agentId: session.user.id } : {}),
     ...(status ? { status: status as any } : {}),
     ...(search ? {
@@ -86,6 +89,7 @@ const createListingSchema = z.object({
   metaDescription: z.string().optional().nullable(),
   videoUrl: z.string().url().optional().nullable(),
   agentId: z.string().optional().nullable(),
+  agencyId: z.string().optional().nullable(),
   amenityIds: z.array(z.string()).default([]),
   slug: z.string().optional(),
 });
@@ -120,11 +124,41 @@ export async function POST(request: NextRequest) {
       slug = `${slug}-${Date.now()}`;
     }
 
+    const targetAgencyId = session.user.role === "SUPER_ADMIN" ? (data.agencyId || null) : session.user.agencyId;
+
+    // --- MONETIZATION & PACKAGE CHECK ---
+    if (targetAgencyId) {
+      const agency = await prisma.agency.findUnique({
+        where: { id: targetAgencyId },
+        include: { listingPackage: true },
+      });
+
+      if (!agency) {
+        return NextResponse.json({ error: "Agency not found" }, { status: 404 });
+      }
+
+      if (agency.packageStatus !== "ACTIVE") {
+        return NextResponse.json({ error: "Agency subscription is inactive or expired. Please upgrade to list properties." }, { status: 403 });
+      }
+
+      if (agency.listingPackage && agency.listingPackage.listingLimit !== -1) {
+        const currentListingsCount = await prisma.property.count({
+          where: { agencyId: targetAgencyId, deletedAt: null },
+        });
+
+        if (currentListingsCount >= agency.listingPackage.listingLimit) {
+          return NextResponse.json({ error: `Listing limit reached. Your package allows ${agency.listingPackage.listingLimit} properties. Please upgrade.` }, { status: 403 });
+        }
+      }
+    }
+    // ------------------------------------
+
     const property = await prisma.property.create({
       data: {
         ...data,
         slug,
         agentId,
+        agencyId: targetAgencyId,
         publishedAt: data.status === "PUBLISHED" ? new Date() : null,
         amenities: {
           create: amenityIds.map((amenityId) => ({ amenityId })),

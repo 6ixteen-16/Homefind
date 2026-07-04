@@ -10,17 +10,20 @@ interface PropertyMapProps {
   address: string;
 }
 
-// Dynamically load Leaflet (client-side only — SSR would fail)
 export function PropertyMap({ lat, lng, title, address }: PropertyMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    // Basic check: if the div doesn't exist yet, do nothing
+    if (!mapRef.current) return;
 
-    // Dynamically import leaflet
+    // Dynamically import leaflet to avoid SSR errors
     import("leaflet").then((L) => {
-      // Fix default icon paths
+      // CRITICAL FIX: Check if map was already initialized while we were loading the library
+      if (mapInstanceRef.current) return;
+
+      // Fix default icon paths for Leaflet in modern bundlers
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -28,6 +31,7 @@ export function PropertyMap({ lat, lng, title, address }: PropertyMapProps) {
         shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
+      // Initialize the map instance
       const map = L.map(mapRef.current!, {
         center: [lat, lng],
         zoom: 15,
@@ -35,15 +39,16 @@ export function PropertyMap({ lat, lng, title, address }: PropertyMapProps) {
         zoomControl: true,
       });
 
+      // Store the instance in the ref so we can track it and clean it up
       mapInstanceRef.current = map;
 
-      // OpenStreetMap tiles (free, no API key)
+      // Add OpenStreetMap tiles
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
 
-      // Custom marker
+      // Create a custom styled marker
       const customIcon = L.divIcon({
         html: `
           <div style="
@@ -67,8 +72,10 @@ export function PropertyMap({ lat, lng, title, address }: PropertyMapProps) {
         popupAnchor: [0, -36],
       });
 
+      // Add the marker to the map
       const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
 
+      // Attach the popup
       marker.bindPopup(`
         <div style="font-family: sans-serif; padding: 4px; min-width: 180px;">
           <div style="font-weight: 600; font-size: 13px; color: #0A1628; margin-bottom: 4px;">${title}</div>
@@ -77,21 +84,23 @@ export function PropertyMap({ lat, lng, title, address }: PropertyMapProps) {
       `);
     });
 
-    // Load Leaflet CSS dynamically
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
-
+    // Cleanup function: This runs when the component unmounts
     return () => {
-      mapInstanceRef.current?.remove();
-      mapInstanceRef.current = null;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
     };
   }, [lat, lng, title, address]);
 
   return (
     <div className="map-container">
-      <div ref={mapRef} className="h-72 lg:h-80 w-full rounded-xl" aria-label={`Map showing location of ${title}`} />
+      {/* The map will be injected into this div */}
+      <div
+        ref={mapRef}
+        className="h-72 lg:h-80 w-full rounded-xl"
+        aria-label={`Map showing location of ${title}`}
+      />
       <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
         <MapPin size={12} />
         <span>{address}</span>

@@ -1,3 +1,6 @@
+/* Leaflet CSS must come first so Tailwind base doesn't strip positioning */
+@import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -441,4 +444,22 @@
   @apply fixed bottom-0 left-0 right-0 z-50
          glass-dark border-t border-gold-500/20
          px-4 py-4 sm:px-6;
+}
+
+/* Leaflet Map — ensure tile layers use absolute positioning as Leaflet requires */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  position: relative !important;
+}
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-popup-pane,
+.leaflet-map-pane canvas,
+.leaflet-map-pane svg {
+  position: absolute !important;
 }

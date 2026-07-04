@@ -15,10 +15,17 @@ export async function GET(request: NextRequest) {
   const format = searchParams.get("format");
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
   const pageSize = 20;
+  const isGlobalAdmin = session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN";
   const isAgent = session.user.role === "AGENT";
 
-  const where = {
+  const where: any = {
     isSpam: false,
+    ...(!isGlobalAdmin ? {
+      OR: [
+        { property: { agencyId: session.user.agencyId } },
+        { assignedTo: { agencyId: session.user.agencyId } }
+      ]
+    } : {}),
     ...(isAgent ? { assignedToId: session.user.id } : {}),
   };
 

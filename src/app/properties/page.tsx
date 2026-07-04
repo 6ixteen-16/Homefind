@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { PropertiesPageClient } from "@/components/property/PropertiesPageClient";
 import { PropertyFiltersPanel } from "@/components/property/PropertyFiltersPanel";
+import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
   title: "Browse Properties",
@@ -35,7 +36,13 @@ interface PageProps {
   };
 }
 
-export default function PropertiesPage({ searchParams }: PageProps) {
+export default async function PropertiesPage({ searchParams }: PageProps) {
+  const agencies = await prisma.agency.findMany({
+    where: { verifiedStatus: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
   return (
     <>
       <Navbar />
@@ -61,13 +68,13 @@ export default function PropertiesPage({ searchParams }: PageProps) {
           <div className="flex flex-col lg:flex-row gap-8">
             {/* Filters Sidebar */}
             <aside className="lg:w-72 shrink-0" aria-label="Property filters">
-              <PropertyFiltersPanel searchParams={searchParams} />
+              <PropertyFiltersPanel searchParams={searchParams} agencies={agencies} />
             </aside>
 
             {/* Results */}
             <div className="flex-1 min-w-0">
               <Suspense fallback={<PropertiesLoadingSkeleton />}>
-                <PropertiesPageClient searchParams={searchParams} />
+                <PropertiesPageClient searchParams={searchParams} agencies={agencies} />
               </Suspense>
             </div>
           </div>

@@ -13,9 +13,10 @@ type SortOption = "newest" | "oldest" | "price_asc" | "price_desc" | "most_viewe
 
 interface PropertiesPageClientProps {
   searchParams: Record<string, string | undefined>;
+  agencies: { id: string; name: string }[];
 }
 
-export function PropertiesPageClient({ searchParams }: PropertiesPageClientProps) {
+export function PropertiesPageClient({ searchParams, agencies }: PropertiesPageClientProps) {
   const router = useRouter();
   const pathname = usePathname();
   const urlParams = useSearchParams();
@@ -360,6 +361,7 @@ export function PropertiesPageClient({ searchParams }: PropertiesPageClientProps
               {/* BUG 8: removed extra p-4 wrapper — panel already has its own per-section padding */}
               <PropertyFiltersPanel
                 searchParams={Object.fromEntries(urlParams.entries())}
+                agencies={agencies}
                 onApply={() => setMobileFiltersOpen(false)}
               />
             </motion.div>

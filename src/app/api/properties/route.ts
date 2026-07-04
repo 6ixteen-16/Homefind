@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const amenityIds = searchParams.get("amenities")?.split(",").filter(Boolean) ?? [];
     const keywords = searchParams.get("keywords");
     const isFeatured = searchParams.get("isFeatured") === "true" ? true : undefined;
+    const agencyId = searchParams.get("agencyId");
     const sortBy = searchParams.get("sortBy") ?? "newest";
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
     const pageSize = Math.min(50, Math.max(1, parseInt(searchParams.get("pageSize") ?? "12")));
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
     if (categories.length) where.category = { in: categories as any };
     if (propertyTypes.length) where.propertyType = { in: propertyTypes };
     if (isFeatured !== undefined) where.isFeatured = isFeatured;
+    if (agencyId) where.agencyId = agencyId;
 
     // Price range
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -162,6 +164,10 @@ export async function GET(request: NextRequest) {
           },
           agent: {
             select: { id: true, name: true, photo: true },
+          },
+          agencyId: true,
+          agency: {
+            select: { id: true, name: true, logoUrl: true },
           },
         },
       }),

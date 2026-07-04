@@ -40,14 +40,16 @@ const SECTIONS: FilterSection[] = [
   { id: "location", label: "Location", defaultOpen: true },
   { id: "size", label: "Property Size" },
   { id: "amenities", label: "Amenities" },
+  { id: "agency", label: "Property Master" },
 ];
 
 interface PropertyFiltersPanelProps {
   searchParams: Record<string, string | undefined>;
+  agencies?: { id: string; name: string }[];
   onApply?: () => void;
 }
 
-export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersPanelProps) {
+export function PropertyFiltersPanel({ searchParams, agencies = [], onApply }: PropertyFiltersPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [openSections, setOpenSections] = useState<Set<string>>(
@@ -73,6 +75,7 @@ export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersP
   const [amenities, setAmenities] = useState<string[]>(
     searchParams.amenities ? searchParams.amenities.split(",") : []
   );
+  const [agencyId, setAgencyId] = useState(searchParams.agencyId ?? "");
   const [keywords, setKeywords] = useState(searchParams.keywords ?? "");
 
   const toggleSection = (id: string) => {
@@ -97,19 +100,20 @@ export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersP
     if (minSqft) params.set("minSqft", minSqft);
     if (maxSqft) params.set("maxSqft", maxSqft);
     if (amenities.length) params.set("amenities", amenities.join(","));
+    if (agencyId) params.set("agencyId", agencyId);
     if (keywords) params.set("keywords", keywords);
     const qs = params.toString();
     router.push(`${pathname}${qs ? "?" + qs : ""}`, { scroll: false });
     onApply?.();
   }, [listingType, categories, propertyTypes, minPrice, maxPrice,
-    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities, keywords,
+    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities, agencyId, keywords,
     router, pathname, onApply]);
 
   const resetFilters = () => {
     setListingType(""); setCategories([]); setPropertyTypes([]);
     setMinPrice(""); setMaxPrice(""); setBedrooms(""); setBathrooms("");
     setCity(""); setArea(""); setMinSqft(""); setMaxSqft("");
-    setAmenities([]); setKeywords("");
+    setAmenities([]); setAgencyId(""); setKeywords("");
     router.push(pathname, { scroll: false });
     onApply?.();
   };
@@ -120,12 +124,12 @@ export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersP
   // BUG 7: keywords was missing from deps — resets & programmatic changes wouldn't retrigger
   useEffect(() => { debouncedApply(); }, [
     listingType, categories, propertyTypes, minPrice, maxPrice,
-    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities, keywords,
+    bedrooms, bathrooms, city, area, minSqft, maxSqft, amenities, agencyId, keywords,
   ]);
 
   const hasFilters = !!(listingType || categories.length || propertyTypes.length ||
     minPrice || maxPrice || bedrooms || bathrooms || city || area ||
-    minSqft || maxSqft || amenities.length || keywords);
+    minSqft || maxSqft || amenities.length || agencyId || keywords);
 
   const toggleArray = (arr: string[], setArr: (v: string[]) => void, val: string) => {
     setArr(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
@@ -434,6 +438,32 @@ export function PropertyFiltersPanel({ searchParams, onApply }: PropertyFiltersP
             ))}
           </div>
         </FilterSectionWrapper>
+
+        {/* Agency / Property Master */}
+        {agencies.length > 0 && (
+          <FilterSectionWrapper
+            id="agency"
+            label="Property Master"
+            open={openSections.has("agency")}
+            onToggle={() => toggleSection("agency")}
+          >
+            <div className="space-y-2">
+              <select
+                value={agencyId}
+                onChange={(e) => setAgencyId(e.target.value)}
+                className="input-luxury text-sm py-2.5 w-full"
+                aria-label="Filter by Property Master"
+              >
+                <option value="">All Agencies</option>
+                {agencies.map((agency) => (
+                  <option key={agency.id} value={agency.id}>
+                    {agency.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </FilterSectionWrapper>
+        )}
       </div>
 
       {/* Apply button for mobile */}

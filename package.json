@@ -70,6 +70,9 @@
     "zod": "^3.23.8",
     "zustand": "^5.0.1"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "devDependencies": {
     "@next/bundle-analyzer": "^14.2.18",
     "@playwright/test": "^1.49.0",

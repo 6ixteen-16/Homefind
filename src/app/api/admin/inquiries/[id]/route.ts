@@ -16,8 +16,8 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
   const inquiry = await prisma.inquiry.findUnique({
     where: { id: params.id },
     include: {
-      property: { select: { id: true, slug: true, title: true, city: true } },
-      assignedTo: { select: { id: true, name: true, email: true, photo: true } },
+      property: { select: { id: true, slug: true, title: true, city: true, agencyId: true } },
+      assignedTo: { select: { id: true, name: true, email: true, photo: true, agencyId: true } },
       notes: {
         orderBy: { createdAt: "asc" },
         include: { author: { select: { id: true, name: true, photo: true } } },
@@ -31,8 +31,20 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
   if (!inquiry) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (session.user.role === "AGENT" && inquiry.assignedToId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const isGlobalAdmin = session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN";
+  if (!isGlobalAdmin) {
+    // Agency check
+    const propertyAgencyId = (inquiry.property as any)?.agencyId;
+    const assignedAgencyId = (inquiry.assignedTo as any)?.agencyId;
+    
+    if (propertyAgencyId !== session.user.agencyId && assignedAgencyId !== session.user.agencyId) {
+      return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
+    }
+
+    // Agent check
+    if (session.user.role === "AGENT" && inquiry.assignedToId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden — Agent mismatch" }, { status: 403 });
+    }
   }
 
   return NextResponse.json({ inquiry });
@@ -56,11 +68,27 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   }
 
   const { note, ...data } = result.data;
-  const existing = await prisma.inquiry.findUnique({ where: { id: params.id } });
+  const existing = await prisma.inquiry.findUnique({ 
+    where: { id: params.id },
+    include: { 
+      property: { select: { agencyId: true } },
+      assignedTo: { select: { agencyId: true } }
+    }
+  });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (session.user.role === "AGENT" && existing.assignedToId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const isGlobalAdmin = session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN";
+  if (!isGlobalAdmin) {
+    const propertyAgencyId = (existing.property as any)?.agencyId;
+    const assignedAgencyId = (existing.assignedTo as any)?.agencyId;
+
+    if (propertyAgencyId !== session.user.agencyId && assignedAgencyId !== session.user.agencyId) {
+      return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
+    }
+
+    if (session.user.role === "AGENT" && existing.assignedToId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden — Agent mismatch" }, { status: 403 });
+    }
   }
 
   const updated = await prisma.$transaction(async (tx) => {

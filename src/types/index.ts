@@ -13,6 +13,7 @@ import type {
   FAQ,
   AuditLog,
   SiteSettings,
+  Agency,
   Role,
   ListingType,
   PropertyCategory,
@@ -74,6 +75,7 @@ export type PropertyCardData = {
   createdAt: Date;
   featuredImage: string | null;
   agent?: Pick<User, "id" | "name" | "photo"> | null;
+  agency?: Pick<Agency, "id" | "name" | "logoUrl"> | null;
 };
 
 // ============================================================
@@ -191,7 +193,7 @@ export type PropertyFormData = Omit<
 // ============================================================
 // SITE SETTINGS
 // ============================================================
-export type { SiteSettings };
+export type { SiteSettings, Agency };
 export type { TeamMember, Testimonial, FAQ };
 
 // ============================================================
@@ -234,12 +236,14 @@ declare module "next-auth" {
       name: string;
       role: Role;
       photo?: string | null;
+      agencyId?: string | null;
     };
   }
 
   interface User {
     role: Role;
     photo?: string | null;
+    agencyId?: string | null;
   }
 }
 
@@ -248,5 +252,6 @@ declare module "next-auth/jwt" {
     role: Role;
     id: string;
     photo?: string | null;
+    agencyId?: string | null;
   }
 }

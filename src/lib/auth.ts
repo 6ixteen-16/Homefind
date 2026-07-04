@@ -25,6 +25,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = (user as any).role;
         token.id = user.id as string;
         token.photo = (user as any).photo;
+        token.agencyId = (user as any).agencyId;
       }
       return token;
     },
@@ -33,6 +34,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
         session.user.photo = token.photo as string;
+        session.user.agencyId = token.agencyId as string | null;
       }
       return session;
     },
@@ -105,6 +107,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           photo: user.photo,
+          agencyId: user.agencyId,
         };
       },
     }),

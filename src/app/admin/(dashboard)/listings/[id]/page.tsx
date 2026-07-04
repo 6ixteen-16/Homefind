@@ -31,13 +31,19 @@ export default async function AdminListingEditPage({ params }: PageProps) {
     redirect("/admin/listings");
   }
 
-  const [amenities, agents] = await Promise.all([
+  const [amenities, agents, agencies] = await Promise.all([
     prisma.amenity.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }).catch(() => []),
     ["SUPER_ADMIN", "ADMIN"].includes(session.user.role)
       ? prisma.user.findMany({
           where: { role: { in: ["AGENT", "ADMIN", "SUPER_ADMIN"] }, isActive: true },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
+        }).catch(() => [])
+      : Promise.resolve([]),
+    session.user.role === "SUPER_ADMIN"
+      ? prisma.agency.findMany({ 
+          select: { id: true, name: true },
+          orderBy: { name: "asc" } 
         }).catch(() => [])
       : Promise.resolve([]),
   ]);
@@ -58,6 +64,7 @@ export default async function AdminListingEditPage({ params }: PageProps) {
         listing={listing}
         amenities={amenities}
         agents={agents}
+        agencies={agencies}
         currentUserId={session.user.id}
         userRole={session.user.role}
       />

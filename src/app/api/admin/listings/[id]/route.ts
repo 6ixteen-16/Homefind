@@ -8,7 +8,7 @@ interface RouteContext {
   params: { id: string };
 }
 
-function requireAdmin(role: string) {
+function isGlobalAdmin(role: string) {
   return ["SUPER_ADMIN", "ADMIN"].includes(role);
 }
 
@@ -28,9 +28,16 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Agent can only see own listings
-  if (session.user.role === "AGENT" && property.agentId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isGlobalAdmin(session.user.role)) {
+    // Check agency silo
+    if (property.agencyId !== session.user.agencyId) {
+      return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
+    }
+
+    // Agent can only see own listings
+    if (session.user.role === "AGENT" && property.agentId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden — Agent mismatch" }, { status: 403 });
+    }
   }
 
   return NextResponse.json({ property });
@@ -68,6 +75,7 @@ const updateSchema = z.object({
   ogImageUrl: z.string().optional().nullable(),
   videoUrl: z.string().optional().nullable(),
   agentId: z.string().optional().nullable(),
+  agencyId: z.string().optional().nullable(),
   amenityIds: z.array(z.string()).optional(),
   mediaOrder: z.array(z.object({ id: z.string(), sortOrder: z.number() })).optional(),
 });
@@ -81,9 +89,16 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Agent can only edit own listings
-  if (session.user.role === "AGENT" && existing.agentId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!isGlobalAdmin(session.user.role)) {
+    // Check agency silo
+    if (existing.agencyId !== session.user.agencyId) {
+      return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
+    }
+
+    // Agent can only edit own listings
+    if (session.user.role === "AGENT" && existing.agentId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden — Agent mismatch" }, { status: 403 });
+    }
   }
 
   // Agents can't publish directly
@@ -140,6 +155,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       where: { id: params.id },
       data: {
         ...data,
+        agencyId: session.user.role === "SUPER_ADMIN" ? (data.agencyId || null) : existing.agencyId,
         ...(safeDescription !== undefined ? { description: safeDescription } : {}),
         ...extra,
       },
@@ -166,12 +182,20 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!requireAdmin(session.user.role)) {
-    return NextResponse.json({ error: "Forbidden — Admin only" }, { status: 403 });
+  const canDeleteGlobally = isGlobalAdmin(session.user.role);
+  const isAgencyAdmin = session.user.role === "AGENCY_ADMIN";
+
+  if (!canDeleteGlobally && !isAgencyAdmin) {
+    return NextResponse.json({ error: "Forbidden — Administrator access required" }, { status: 403 });
   }
 
   const existing = await prisma.property.findUnique({ where: { id: params.id } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Access check for Agency Admin
+  if (!canDeleteGlobally && existing.agencyId !== session.user.agencyId) {
+    return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
+  }
 
   const { permanent } = await request.json().catch(() => ({ permanent: false }));
 

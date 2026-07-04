@@ -22,6 +22,7 @@ async function getProperty(slug: string) {
     where: { slug, deletedAt: null, status: "PUBLISHED" },
     include: {
       agent: { select: { id: true, name: true, email: true, phone: true, photo: true, bio: true } },
+      agency: { select: { id: true, name: true, logoUrl: true, contactEmail: true, address: true, verifiedStatus: true } },
       media: { orderBy: { sortOrder: "asc" } },
       amenities: { include: { amenity: true } },
     },
@@ -148,13 +149,9 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
           {/* Action Bar */}
           <div className="flex flex-wrap items-center gap-3 my-6 py-4 border-y border-border">
-            <button
-              onClick={undefined}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-red-500 transition-colors"
-              aria-label="Save to favorites"
-            >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Heart size={16} /> Save
-            </button>
+            </div>
             <button
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Share property"
@@ -171,13 +168,9 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 <Video size={16} /> Virtual Tour
               </a>
             )}
-            <button
-              onClick={() => typeof window !== "undefined" && window.print()}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors ml-auto"
-              aria-label="Print property details"
-            >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground ml-auto">
               <Printer size={16} /> Print
-            </button>
+            </div>
             {property.views > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Eye size={13} />
@@ -276,6 +269,58 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
             {/* Right Column — Agent + Inquiry */}
             <div className="space-y-5">
+              {/* Agency Card */}
+              {property.agency && (
+                <div className="bg-card rounded-xl border border-border shadow-luxury p-5">
+                  <h3 className="font-semibold text-sm text-foreground mb-4">Property Master</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    {property.agency.logoUrl ? (
+                      <Image
+                        src={property.agency.logoUrl}
+                        alt={property.agency.name}
+                        width={52}
+                        height={52}
+                        className="rounded-lg object-contain bg-white border border-border"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-lg bg-navy-900/10 flex items-center justify-center text-xl font-display text-navy-800">
+                        {property.agency.name[0]}
+                      </div>
+                    )}
+                    {property.agency && (
+                      <div>
+                        <div className="font-semibold text-foreground flex items-center gap-1.5">
+                          {property.agency.name}
+                          {property.agency.verifiedStatus && (
+                            <CheckCircle2 size={14} className="text-gold-500" title="Verified Property Master" />
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Certified Agency</div>
+                      </div>
+                    )}
+                  </div>
+                  {(property.agency.contactEmail || property.agency.address) && (
+                    <div className="space-y-2 mt-4 pt-4 border-t border-border">
+                      {property.agency.contactEmail && (
+                        <a
+                          href={`mailto:${property.agency.contactEmail}`}
+                          className="flex items-center gap-2.5 w-full py-2 px-3 bg-muted rounded-lg text-sm hover:bg-muted/70 transition-colors"
+                        >
+                          <Mail size={14} className="text-gold-500 shrink-0" />
+                          <span className="truncate">{property.agency.contactEmail}</span>
+                        </a>
+                      )}
+                      {property.agency.address && (
+                        <div className="flex items-start gap-2.5 w-full py-2 px-3 bg-muted rounded-lg text-sm">
+                          <MapPin size={14} className="text-gold-500 shrink-0 mt-0.5" />
+                          <span className="text-muted-foreground">{property.agency.address}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Agent Card */}
               {property.agent && (
                 <div className="bg-card rounded-xl border border-border shadow-luxury p-5">

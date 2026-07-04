@@ -19,7 +19,7 @@ model User {
   emailVerified        DateTime?
   passwordHash         String?
   name                 String
-  role                 Role                 @default(AGENT)
+  role                 String               @default("AGENT")
   phone                String?
   bio                  String?
   photo                String?
@@ -34,6 +34,8 @@ model User {
 
   listings             Property[]           @relation("AgentListings")
   assignedInquiries    Inquiry[]            @relation("AssignedInquiries")
+  agencyId             String?
+  agency               Agency?              @relation(fields: [agencyId], references: [id])
   inquiryNotes         InquiryNote[]
   inquiryReplies       InquiryReply[]
   auditLogs            AuditLog[]
@@ -43,26 +45,19 @@ model User {
 
   @@index([email])
   @@index([role, isActive])
-}
-
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  AGENT
-  EDITOR
-  VIEWER
+  @@index([agencyId])
 }
 
 model Session {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token       String   @unique
-  expiresAt   DateTime
-  ipAddress   String?
-  userAgent   String?
-  isRevoked   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  expiresAt    DateTime
+  ipAddress    String?
+  userAgent    String?
+  isRevoked    Boolean  @default(false)
+  createdAt    DateTime @default(now())
   lastActiveAt DateTime @default(now())
 
   @@index([userId])
@@ -81,19 +76,59 @@ model PasswordResetToken {
   @@index([token])
 }
 
+// ==================== LISTING PACKAGES ====================
+
+model ListingPackage {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  price           Float
+  currency        String   @default("USD")
+  listingLimit    Int      // Number of properties they can list, -1 for unlimited
+  durationDays    Int      // e.g. 30, 365
+  isPopular       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  agencies        Agency[]
+}
+
+// ==================== AGENCIES ====================
+
+model Agency {
+  id               String     @id @default(cuid())
+  name             String
+  logoUrl          String?
+  verifiedStatus   Boolean    @default(false)
+  address          String?
+  contactEmail     String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  listingPackageId String?
+  listingPackage   ListingPackage? @relation(fields: [listingPackageId], references: [id])
+  packageStatus    String     @default("INACTIVE") // ACTIVE, INACTIVE, EXPIRED, CANCELED
+  packageExpiresAt DateTime?
+  listingCredits   Int        @default(0)
+
+  users            User[]
+  properties       Property[]
+}
+
 // ==================== PROPERTIES ====================
 
 model Property {
-  id               String           @id @default(cuid())
-  slug             String           @unique
+  id               String          @id @default(cuid())
+  slug             String          @unique
   title            String
-  listingType      ListingType
-  category         PropertyCategory
+  listingType      String
+  category         String
   propertyType     String
-  status           PropertyStatus   @default(DRAFT)
+  status           String          @default("DRAFT")
   price            Float
-  currency         String           @default("USD")
-  priceNegotiable  Boolean          @default(false)
+  currency         String          @default("USD")
+  priceNegotiable  Boolean         @default(false)
   priceUnit        String?
   bedrooms         Int?
   bathrooms        Int?
@@ -104,7 +139,7 @@ model Property {
   furnishingStatus String?
   floorNumber      Int?
   totalFloors      Int?
-  description      String           @db.Text
+  description      String
   address          String
   city             String
   area             String?
@@ -112,8 +147,8 @@ model Property {
   zipCode          String?
   latitude         Float?
   longitude        Float?
-  isFeatured       Boolean          @default(false)
-  views            Int              @default(0)
+  isFeatured       Boolean         @default(false)
+  views            Int             @default(0)
   metaTitle        String?
   metaDescription  String?
   ogImageUrl       String?
@@ -121,10 +156,12 @@ model Property {
   publishedAt      DateTime?
   deletedAt        DateTime?
   scheduledAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   agentId          String?
-  agent            User?            @relation("AgentListings", fields: [agentId], references: [id])
+  agent            User?           @relation("AgentListings", fields: [agentId], references: [id])
+  agencyId         String?
+  agency           Agency?         @relation(fields: [agencyId], references: [id])
 
   media            PropertyMedia[]
   amenities        PropertyAmenity[]
@@ -135,51 +172,26 @@ model Property {
   @@index([price])
   @@index([isFeatured, status])
   @@index([agentId])
+  @@index([agencyId])
   @@index([createdAt])
 }
 
-enum ListingType {
-  SALE
-  RENT
-}
-
-enum PropertyCategory {
-  RESIDENTIAL
-  COMMERCIAL
-  LAND
-  SHORT_STAY
-}
-
-enum PropertyStatus {
-  DRAFT
-  PUBLISHED
-  UNDER_OFFER
-  SOLD
-  RENTED
-  ARCHIVED
-}
-
 model PropertyMedia {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   propertyId  String
-  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   url         String
   publicId    String
-  type        MediaType @default(IMAGE)
+  type        String   @default("IMAGE")
   altText     String?
   width       Int?
   height      Int?
   sizeBytes   Int?
-  sortOrder   Int       @default(0)
-  isFeatured  Boolean   @default(false)
-  createdAt   DateTime  @default(now())
+  sortOrder   Int      @default(0)
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   @@index([propertyId, sortOrder])
-}
-
-enum MediaType {
-  IMAGE
-  DOCUMENT
 }
 
 model Amenity {
@@ -206,7 +218,7 @@ model PropertyAmenity {
 
 model Inquiry {
   id            String        @id @default(cuid())
-  type          InquiryType   @default(PROPERTY)
+  type          String        @default("PROPERTY")
   propertyId    String?
   property      Property?     @relation(fields: [propertyId], references: [id])
   name          String
@@ -214,8 +226,8 @@ model Inquiry {
   phone         String?
   contactMethod String?
   subject       String?
-  message       String        @db.Text
-  status        InquiryStatus @default(NEW)
+  message       String
+  status        String        @default("NEW")
   isSpam        Boolean       @default(false)
   assignedToId  String?
   assignedTo    User?         @relation("AssignedInquiries", fields: [assignedToId], references: [id])
@@ -233,28 +245,13 @@ model Inquiry {
   @@index([email])
 }
 
-enum InquiryType {
-  PROPERTY
-  GENERAL
-  VIEWING
-}
-
-enum InquiryStatus {
-  NEW
-  IN_PROGRESS
-  AWAITING_CLIENT
-  CLOSED_WON
-  CLOSED_LOST
-  SPAM
-}
-
 model InquiryNote {
   id        String   @id @default(cuid())
   inquiryId String
   inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
-  content   String   @db.Text
+  content   String
   createdAt DateTime @default(now())
 
   @@index([inquiryId])
@@ -267,7 +264,7 @@ model InquiryReply {
   sentById  String
   sentBy    User     @relation(fields: [sentById], references: [id])
   subject   String
-  body      String   @db.Text
+  body      String
   sentAt    DateTime @default(now())
 
   @@index([inquiryId])
@@ -280,13 +277,13 @@ model BlogPost {
   slug            String     @unique
   title           String
   excerpt         String
-  content         String     @db.Text
+  content         String
   coverImageUrl   String?
-  status          PostStatus @default(DRAFT)
+  status          String     @default("DRAFT")
   metaTitle       String?
   metaDescription String?
-  categories      String[]
-  tags            String[]
+  categories      String     @default("[]")
+  tags            String     @default("[]")
   authorId        String
   author          User       @relation(fields: [authorId], references: [id])
   publishedAt     DateTime?
@@ -299,17 +296,11 @@ model BlogPost {
   @@index([authorId])
 }
 
-enum PostStatus {
-  DRAFT
-  SCHEDULED
-  PUBLISHED
-}
-
 model TeamMember {
   id        String   @id @default(cuid())
   name      String
   title     String
-  bio       String?  @db.Text
+  bio       String?
   photo     String?
   phone     String?
   email     String?
@@ -329,7 +320,7 @@ model Testimonial {
   clientTitle String?
   clientPhoto String?
   rating      Int
-  text        String   @db.Text
+  text        String
   propertyRef String?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
@@ -341,7 +332,7 @@ model Testimonial {
 model FAQ {
   id        String   @id @default(cuid())
   question  String
-  answer    String   @db.Text
+  answer    String
   category  String?
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
@@ -369,11 +360,11 @@ model AuditLog {
   action     String
   entityType String
   entityId   String?
-  prevValue  Json?
-  newValue   Json?
+  prevValue  String?
+  newValue   String?
   ipAddress  String?
   userAgent  String?
-  metadata   Json?
+  metadata   String?
   createdAt  DateTime @default(now())
 
   @@index([userId])
@@ -382,24 +373,24 @@ model AuditLog {
 }
 
 model SiteSettings {
-  id                String  @id @default("singleton")
-  siteName          String  @default("HomeFind")
-  tagline           String?
-  logoUrl           String?
-  faviconUrl        String?
-  phone             String?
-  email             String?
-  address           String?
-  whatsappNumber    String?
-  facebookUrl       String?
-  instagramUrl      String?
-  linkedinUrl       String?
-  twitterUrl        String?
-  youtubeUrl        String?
+  id                 String   @id @default("singleton")
+  siteName           String   @default("HomeFind")
+  tagline            String?
+  logoUrl            String?
+  faviconUrl         String?
+  phone              String?
+  email              String?
+  address            String?
+  whatsappNumber     String?
+  facebookUrl        String?
+  instagramUrl       String?
+  linkedinUrl        String?
+  twitterUrl         String?
+  youtubeUrl         String?
   googleMapsEmbedUrl String?
-  footerCopyright   String?
-  notificationEmail String?
-  ga4MeasurementId  String?
-  turnstileSiteKey  String?
-  updatedAt         DateTime @updatedAt
+  footerCopyright    String?
+  notificationEmail  String?
+  ga4MeasurementId   String?
+  turnstileSiteKey   String?
+  updatedAt          DateTime @updatedAt
 }

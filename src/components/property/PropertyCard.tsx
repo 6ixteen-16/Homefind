@@ -162,6 +162,16 @@ export function PropertyCard({
                 <span className="text-xs text-muted-foreground/60">{formatNumber(property.views)}</span>
               </div>
             )}
+            {property.agency && !property.views && (
+              <div className="text-xs text-muted-foreground/80 ml-auto font-medium">
+                {property.agency.name}
+              </div>
+            )}
+            {property.agency && property.views > 0 && (
+              <div className="text-xs text-muted-foreground/80 ml-3 font-medium border-l border-border pl-3">
+                {property.agency.name}
+              </div>
+            )}
           </div>
         </div>
       </motion.article>
@@ -286,8 +296,15 @@ export function PropertyCard({
             </div>
           )}
 
+          {/* Agency */}
+          {property.agency && (
+            <div className="ml-auto flex items-center text-2xs font-medium text-muted-foreground/80 truncate max-w-[100px]">
+              {property.agency.name}
+            </div>
+          )}
+
           {/* Agent */}
-          {property.agent && (
+          {property.agent && !property.agency && (
             <div className="ml-auto flex items-center gap-1.5">
               {property.agent.photo ? (
                 <Image

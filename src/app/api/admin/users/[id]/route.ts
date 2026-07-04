@@ -8,17 +8,31 @@ interface RouteContext {
 }
 
 const updateSchema = z.object({
-  role: z.enum(["SUPER_ADMIN", "ADMIN", "AGENT", "EDITOR", "VIEWER"]).optional(),
+  role: z.enum(["SUPER_ADMIN", "ADMIN", "AGENCY_ADMIN", "AGENT", "EDITOR", "VIEWER"]).optional(),
   isActive: z.boolean().optional(),
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
   bio: z.string().optional(),
+  agencyId: z.string().optional().nullable(),
 });
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const isGlobalAdmin = session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN";
+  const isAgencyAdmin = session.user.role === "AGENCY_ADMIN";
+
+  if (!isGlobalAdmin && !isAgencyAdmin) {
+    return NextResponse.json({ error: "Forbidden — Access restricted to Administrators" }, { status: 403 });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Silo check
+  if (!isGlobalAdmin && existing.agencyId !== session.user.agencyId) {
+    return NextResponse.json({ error: "Forbidden — Agency mismatch" }, { status: 403 });
   }
 
   // Prevent modifying self via this route
@@ -37,7 +51,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
   const user = await prisma.user.update({
     where: { id: params.id },
-    data: result.data,
+    data: {
+      ...result.data,
+      agencyId: isGlobalAdmin ? result.data.agencyId : existing.agencyId,
+    },
     select: { id: true, name: true, email: true, role: true, isActive: true },
   });
 

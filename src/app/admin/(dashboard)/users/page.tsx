@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { formatDate } from "@/lib/utils";
 import { AdminUsersClient } from "@/components/admin/AdminUsersClient";
 
 export const metadata: Metadata = { title: "User Management — Admin" };
@@ -17,22 +16,26 @@ export default async function AdminUsersPage() {
     redirect("/admin");
   }
 
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      lastLoginAt: true,
-      createdAt: true,
-      photo: true,
-      _count: {
-        select: { listings: true, assignedInquiries: true },
+  const [users, agencies] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        lastLoginAt: true,
+        createdAt: true,
+        photo: true,
+        agencyId: true,
+        _count: {
+          select: { listings: true, assignedInquiries: true },
+        },
       },
-    },
-  }).catch(() => []);
+    }),
+    prisma.agency.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } })
+  ]).catch(() => [[], []]);
 
   return (
     <div className="space-y-6">
@@ -46,7 +49,11 @@ export default async function AdminUsersPage() {
           </p>
         </div>
       </div>
-      <AdminUsersClient users={users} currentUserId={session.user.id} />
+      <AdminUsersClient 
+        users={users as any} 
+        agencies={agencies} 
+        currentUserId={session.user.id} 
+      />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Building2, MessageSquare, Users, Image,
   Settings, FileText, Star, HelpCircle, ClipboardList,
-  ChevronLeft, ChevronRight, LogOut, BarChart3, Users2,
+  ChevronLeft, ChevronRight, LogOut, BarChart3, Users2, Package,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { signOut } from "next-auth/react";
@@ -31,6 +31,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const SETTINGS_ITEMS: NavItem[] = [
+  { href: "/admin/agencies", label: "Agencies", icon: Building2, roles: ["SUPER_ADMIN"] },
+  { href: "/admin/packages", label: "Listing Packages", icon: Package, roles: ["SUPER_ADMIN"] },
   { href: "/admin/users", label: "User Management", icon: Users, roles: ["SUPER_ADMIN"] },
   { href: "/admin/team", label: "Team Members", icon: Users2, roles: ["SUPER_ADMIN", "ADMIN"] },
   { href: "/admin/testimonials", label: "Testimonials", icon: Star, roles: ["SUPER_ADMIN", "ADMIN"] },

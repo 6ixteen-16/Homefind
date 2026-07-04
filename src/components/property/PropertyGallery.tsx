@@ -77,7 +77,7 @@ export function PropertyGallery({ media, title }: PropertyGalleryProps) {
           <div className="embla__container">
             {images.map((img, i) => (
               <div key={img.id} className="embla__slide relative">
-                <div className="aspect-[16/9] lg:aspect-[2/1]">
+                <div className="aspect-[16/9] lg:aspect-[2/1] relative">
                   <Image
                     src={img.url}
                     alt={img.altText || `${title} — Photo ${i + 1}`}
