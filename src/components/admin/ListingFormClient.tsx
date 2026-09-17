@@ -10,42 +10,23 @@ import { cn, generateSlug } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import type { Role } from "@/types";
 
-// Utility to resize images and convert to base64
-const resizeImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new window.Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
-        let width = img.width;
-        let height = img.height;
+// Upload a file to the server and return its public URL
+const uploadFile = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append("file", file);
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.8)); // compress to 80% quality
-      };
-      img.onerror = (error) => reject(error);
-    };
-    reader.onerror = (error) => reject(error);
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    body: formData,
   });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error(data.error || "Failed to upload image");
+  }
+
+  const data = await res.json();
+  return data.url;
 };
 
 const schema = z.object({
@@ -154,16 +135,27 @@ export function ListingFormClient({
       const files = Array.from(e.target.files);
       
       for (const file of files) {
-        // Resize and get base64
-        const base64Url = await resizeImage(file);
+        // Upload to server and get a real URL path
+        const publicUrl = await uploadFile(file);
         
         if (isNew) {
-          setMediaImages((prev) => [...prev, { id: `temp-${Date.now()}-${Math.random()}`, url: base64Url, type: "IMAGE", isFeatured: prev.length === 0, sortOrder: prev.length, altText: null, width: null, height: null }]);
+          // Queue image for attaching after listing is created
+          setMediaImages((prev) => [...prev, {
+            id: `temp-${Date.now()}-${Math.random()}`,
+            url: publicUrl,
+            type: "IMAGE",
+            isFeatured: prev.length === 0,
+            sortOrder: prev.length,
+            altText: null,
+            width: null,
+            height: null,
+          }]);
         } else {
+          // Immediately attach to the existing listing
           const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: base64Url, type: "IMAGE" }),
+            body: JSON.stringify({ url: publicUrl, type: "IMAGE" }),
           });
           const result = await res.json();
           if (!res.ok) throw new Error(result.error || "Failed to add image");
@@ -171,13 +163,12 @@ export function ListingFormClient({
         }
       }
       
-      toast({ title: "Images added successfully!", variant: "success" });
+      toast({ title: "Images uploaded successfully!", variant: "success" });
     } catch (err: any) {
-      toast({ title: "Failed to process images", description: err.message, variant: "destructive" });
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
       setAddingImage(false);
-      // Reset input
-      e.target.value = '';
+      e.target.value = "";
     }
   };
 
@@ -222,8 +213,11 @@ export function ListingFormClient({
     setSaving(true);
     try {
       const payload = { ...data, amenityIds: selectedAmenities };
-      const url     = isNew ? "/api/admin/listings" : `/api/admin/listings/${listing.id}`;
-      const method  = isNew ? "POST" : "PATCH";
+
+      // Determine if we need to create or update
+      // Use listing.id if editing, or router-push to edit page after creation
+      const url    = isNew ? "/api/admin/listings" : `/api/admin/listings/${listing.id}`;
+      const method = isNew ? "POST" : "PATCH";
 
       const res = await fetch(url, {
         method,
@@ -237,13 +231,17 @@ export function ListingFormClient({
       // For new listings, attach any queued media images
       if (isNew && mediaImages.length > 0 && result.property?.id) {
         await Promise.all(
-          mediaImages.map((img, i) =>
-            fetch(`/api/admin/listings/${result.property.id}/media`, {
+          mediaImages.map(async (img, i) => {
+            const res2 = await fetch(`/api/admin/listings/${result.property.id}/media`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ url: img.url, type: "IMAGE", isFeatured: i === 0 }),
-            })
-          )
+            });
+            if (!res2.ok) {
+              const r = await res2.json().catch(() => ({ error: "Image upload failed" }));
+              throw new Error(r.error || "Failed to save an image");
+            }
+          })
         );
       }
 
@@ -260,6 +258,7 @@ export function ListingFormClient({
       setSaving(false);
     }
   };
+
 
   const inputCls = (err?: any) =>
     cn("input-luxury", err && "border-red-400 focus:border-red-400");
@@ -662,13 +661,6 @@ export function ListingFormClient({
           ) : (
             <button type="submit" disabled={saving} className="btn-gold flex items-center gap-2">
               {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Save size={16} /> Save Listing</>}
-            </button>
-          )}
-          {/* Quick save at any step */}
-          {step < STEPS.length - 1 && (
-            <button type="submit" disabled={saving} className="btn-navy flex items-center gap-2 text-sm">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save Draft
             </button>
           )}
         </div>

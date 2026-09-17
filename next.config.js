@@ -13,10 +13,10 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://www.google-analytics.com",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
-      "img-src 'self' data: blob: https://res.cloudinary.com https://*.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://images.unsplash.com",
-      "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self' https://*.supabase.co https://api.cloudinary.com https://nominatim.openstreetmap.org https://*.sentry.io https://www.google-analytics.com https://challenges.cloudflare.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https://res.cloudinary.com https://*.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://images.unsplash.com http://localhost:*",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://*.tidbcloud.com https://api.cloudinary.com https://nominatim.openstreetmap.org https://*.sentry.io https://www.google-analytics.com https://challenges.cloudflare.com",
       "frame-src https://challenges.cloudflare.com https://www.youtube.com https://player.vimeo.com",
       "worker-src 'self' blob:",
     ].join("; "),
@@ -32,6 +32,8 @@ const nextConfig = {
       { protocol: "https", hostname: "**.openstreetmap.org" },
       { protocol: "https", hostname: "unpkg.com" },
     ],
+    // Allow unoptimized local uploads
+    unoptimized: false,
     formats: ["image/avif", "image/webp"],
   },
   async headers() {
