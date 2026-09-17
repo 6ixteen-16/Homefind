@@ -222,13 +222,11 @@ export function ListingFormClient({
     setSaving(true);
     try {
       const payload = { ...data, amenityIds: selectedAmenities };
+      const apiUrl  = isNew ? "/api/admin/listings" : `/api/admin/listings/${listing.id}`;
+      const method  = isNew ? "POST" : "PATCH";
 
-      // Determine if we need to create or update
-      // Use listing.id if editing, or router-push to edit page after creation
-      const url    = isNew ? "/api/admin/listings" : `/api/admin/listings/${listing.id}`;
-      const method = isNew ? "POST" : "PATCH";
-
-      const res = await fetch(url, {
+      // Step 1: Create or update the listing
+      const res = await fetch(apiUrl, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -237,21 +235,23 @@ export function ListingFormClient({
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Save failed");
 
-      // For new listings, attach any queued media images
-      if (isNew && mediaImages.length > 0 && result.property?.id) {
-        await Promise.all(
-          mediaImages.map(async (img, i) => {
-            const res2 = await fetch(`/api/admin/listings/${result.property.id}/media`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ url: img.url, type: "IMAGE", isFeatured: i === 0 }),
-            });
-            if (!res2.ok) {
-              const r = await res2.json().catch(() => ({ error: "Image upload failed" }));
-              throw new Error(r.error || "Failed to save an image");
-            }
-          })
-        );
+      const propertyId: string = result.property?.id ?? listing?.id;
+      if (!propertyId) throw new Error("Server returned no property ID");
+
+      // Step 2: For new listings, attach queued images one by one (sequential is safer)
+      if (isNew && mediaImages.length > 0) {
+        for (let i = 0; i < mediaImages.length; i++) {
+          const img = mediaImages[i];
+          const res2 = await fetch(`/api/admin/listings/${propertyId}/media`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: img.url, type: "IMAGE", isFeatured: i === 0 }),
+          });
+          if (!res2.ok) {
+            // Log warning but don't block — listing was saved successfully
+            console.warn("Failed to attach image", i, await res2.text().catch(() => ""));
+          }
+        }
       }
 
       toast({
@@ -259,7 +259,9 @@ export function ListingFormClient({
         description: data.status === "PUBLISHED" ? "Now live on the site." : "Saved as draft.",
         variant: "success",
       });
-      router.push(`/admin/listings/${result.property?.id ?? listing?.id}`);
+
+      // Redirect to the listing edit page (always valid URL)
+      router.push(`/admin/listings/${propertyId}`);
       router.refresh();
     } catch (err: any) {
       toast({ title: "Failed to save", description: err.message, variant: "destructive" });

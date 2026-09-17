@@ -34,7 +34,7 @@ function useFavorites() {
         next.add(id);
       }
       try {
-        localStorage.setItem("property-favorites", JSON.stringify(Array.from(next)));
+        localStorage.setItem("property-favorites", JSON.stringify([...next]));
       } catch {}
       return next;
     });
@@ -53,9 +53,8 @@ export function PropertyCard({
   const badge = getListingTypeBadge(property.listingType);
   const statusConfig = getStatusLabel(property.status);
 
-  const imageUrl =
-    property.featuredImage ||
-    `https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80`;
+  const imageUrl = property.featuredImage || null;
+  const isDataUrl = imageUrl?.startsWith("data:") ?? false;
 
   if (view === "list") {
     return (
@@ -70,14 +69,31 @@ export function PropertyCard({
           href={`/properties/${property.slug}`}
           className="relative sm:w-72 h-48 sm:h-auto shrink-0 overflow-hidden"
         >
-          <Image
-            src={imageUrl}
-            alt={property.title}
-            fill
-            sizes="(max-width: 640px) 100vw, 288px"
-            className="object-cover transition-transform duration-500 hover:scale-105"
-            loading={priority ? "eager" : "lazy"}
-          />
+          {imageUrl ? (
+            isDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imageUrl}
+                alt={property.title}
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                loading={priority ? "eager" : "lazy"}
+              />
+            ) : (
+              <Image
+                src={imageUrl}
+                alt={property.title}
+                fill
+                sizes="(max-width: 640px) 100vw, 288px"
+                className="object-cover transition-transform duration-500 hover:scale-105"
+                loading={priority ? "eager" : "lazy"}
+              />
+            )
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted gap-2">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted-foreground/40"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              <span className="text-2xs text-muted-foreground/60">No image</span>
+            </div>
+          )}
           <div className="absolute top-3 left-3">
             <span className={badge.className}>{badge.label}</span>
           </div>
@@ -162,16 +178,6 @@ export function PropertyCard({
                 <span className="text-xs text-muted-foreground/60">{formatNumber(property.views)}</span>
               </div>
             )}
-            {property.agency && !property.views && (
-              <div className="text-xs text-muted-foreground/80 ml-auto font-medium">
-                {property.agency.name}
-              </div>
-            )}
-            {property.agency && property.views > 0 && (
-              <div className="text-xs text-muted-foreground/80 ml-3 font-medium border-l border-border pl-3">
-                {property.agency.name}
-              </div>
-            )}
           </div>
         </div>
       </motion.article>
@@ -189,14 +195,31 @@ export function PropertyCard({
       {/* Image */}
       <div className="relative h-52 overflow-hidden">
         <Link href={`/properties/${property.slug}`} tabIndex={-1} aria-hidden="true">
-          <Image
-            src={imageUrl}
-            alt={property.title}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-700 group-hover:scale-105"
-            loading={priority ? "eager" : "lazy"}
-          />
+          {imageUrl ? (
+            isDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imageUrl}
+                alt={property.title}
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-108"
+                loading={priority ? "eager" : "lazy"}
+              />
+            ) : (
+              <Image
+                src={imageUrl}
+                alt={property.title}
+                fill
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                className="object-cover transition-transform duration-700 group-hover:scale-108"
+                loading={priority ? "eager" : "lazy"}
+              />
+            )
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted gap-2">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted-foreground/40"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              <span className="text-2xs text-muted-foreground/60">No image</span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         </Link>
 
@@ -296,15 +319,8 @@ export function PropertyCard({
             </div>
           )}
 
-          {/* Agency */}
-          {property.agency && (
-            <div className="ml-auto flex items-center text-2xs font-medium text-muted-foreground/80 truncate max-w-[100px]">
-              {property.agency.name}
-            </div>
-          )}
-
           {/* Agent */}
-          {property.agent && !property.agency && (
+          {property.agent && (
             <div className="ml-auto flex items-center gap-1.5">
               {property.agent.photo ? (
                 <Image

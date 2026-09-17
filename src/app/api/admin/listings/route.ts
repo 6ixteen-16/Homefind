@@ -132,8 +132,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Audit log
-    await prisma.auditLog.create({
+    // Fire-and-forget audit log — never let this crash the response
+    prisma.auditLog.create({
       data: {
         userId: session.user.id,
         action: "LISTING_CREATED",
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         newValue: { title: property.title, status: property.status } as any,
         ipAddress: request.headers.get("x-forwarded-for") || undefined,
       },
-    });
+    }).catch((e) => console.warn("[AuditLog] Failed to write:", e?.message));
 
     return NextResponse.json({ success: true, property }, { status: 201 });
   } catch (error) {
