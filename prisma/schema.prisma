@@ -20,7 +20,7 @@ model User {
   name                 String
   role                 String               @default("AGENT")
   phone                String?
-  bio                  String?
+  bio                  String?              @db.Text
   photo                String?
   isActive             Boolean              @default(true)
   failedLoginAttempts  Int                  @default(0)
@@ -138,7 +138,7 @@ model Property {
   furnishingStatus String?
   floorNumber      Int?
   totalFloors      Int?
-  description      String
+  description      String          @db.LongText
   address          String
   city             String
   area             String?
@@ -225,7 +225,7 @@ model Inquiry {
   phone         String?
   contactMethod String?
   subject       String?
-  message       String
+  message       String        @db.Text
   status        String        @default("NEW")
   isSpam        Boolean       @default(false)
   assignedToId  String?
@@ -250,7 +250,7 @@ model InquiryNote {
   inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
-  content   String
+  content   String   @db.Text
   createdAt DateTime @default(now())
 
   @@index([inquiryId])
@@ -263,7 +263,7 @@ model InquiryReply {
   sentById  String
   sentBy    User     @relation(fields: [sentById], references: [id])
   subject   String
-  body      String
+  body      String   @db.Text
   sentAt    DateTime @default(now())
 
   @@index([inquiryId])
@@ -275,8 +275,8 @@ model BlogPost {
   id              String     @id @default(cuid())
   slug            String     @unique
   title           String
-  excerpt         String
-  content         String
+  excerpt         String     @db.Text
+  content         String     @db.LongText
   coverImageUrl   String?
   status          String     @default("DRAFT")
   metaTitle       String?
@@ -299,7 +299,7 @@ model TeamMember {
   id        String   @id @default(cuid())
   name      String
   title     String
-  bio       String?
+  bio       String?  @db.Text
   photo     String?
   phone     String?
   email     String?
@@ -319,7 +319,7 @@ model Testimonial {
   clientTitle String?
   clientPhoto String?
   rating      Int
-  text        String
+  text        String   @db.Text
   propertyRef String?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
@@ -331,7 +331,7 @@ model Testimonial {
 model FAQ {
   id        String   @id @default(cuid())
   question  String
-  answer    String
+  answer    String   @db.Text
   category  String?
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
