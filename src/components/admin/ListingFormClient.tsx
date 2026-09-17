@@ -10,24 +10,33 @@ import { cn, generateSlug } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import type { Role } from "@/types";
 
-// Upload a file to the server and return its public URL
-const uploadFile = async (file: File): Promise<string> => {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
+// Compress image in the browser and return a small base64 data URL.
+// This avoids any server-side filesystem dependency (required for Vercel).
+const compressImage = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new window.Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 900; // max dimension in pixels
+        let { width, height } = img;
+        if (width > height) {
+          if (width > MAX) { height = Math.round((height * MAX) / width); width = MAX; }
+        } else {
+          if (height > MAX) { width = Math.round((width * MAX) / height); height = MAX; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d")?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72)); // ~72% quality keeps images sharp but small
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
   });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: "Upload failed" }));
-    throw new Error(data.error || "Failed to upload image");
-  }
-
-  const data = await res.json();
-  return data.url;
-};
 
 const schema = z.object({
   title:           z.string().min(3, "Title must be at least 3 characters"),
@@ -135,14 +144,14 @@ export function ListingFormClient({
       const files = Array.from(e.target.files);
       
       for (const file of files) {
-        // Upload to server and get a real URL path
-        const publicUrl = await uploadFile(file);
+        // Compress image client-side - produces a small base64 data URL
+        const dataUrl = await compressImage(file);
         
         if (isNew) {
-          // Queue image for attaching after listing is created
+          // Queue image to attach after listing is created
           setMediaImages((prev) => [...prev, {
             id: `temp-${Date.now()}-${Math.random()}`,
-            url: publicUrl,
+            url: dataUrl,
             type: "IMAGE",
             isFeatured: prev.length === 0,
             sortOrder: prev.length,
@@ -151,19 +160,19 @@ export function ListingFormClient({
             height: null,
           }]);
         } else {
-          // Immediately attach to the existing listing
+          // Immediately save to the existing listing
           const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: publicUrl, type: "IMAGE" }),
+            body: JSON.stringify({ url: dataUrl, type: "IMAGE" }),
           });
           const result = await res.json();
-          if (!res.ok) throw new Error(result.error || "Failed to add image");
+          if (!res.ok) throw new Error(result.error || "Failed to save image");
           setMediaImages((prev) => [...prev, result.media]);
         }
       }
       
-      toast({ title: "Images uploaded successfully!", variant: "success" });
+      toast({ title: "Images added!", variant: "success" });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
