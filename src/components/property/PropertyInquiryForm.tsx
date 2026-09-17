@@ -142,8 +142,8 @@ export function PropertyInquiryForm({ propertyId, propertyTitle }: PropertyInqui
             { value: "whatsapp", label: "WhatsApp" },
           ].map((opt) => (
             <label key={opt.value} className="flex-1 cursor-pointer">
-              <input {...register("contactMethod")} type="radio" value={opt.value} className="sr-only" />
-              <div className="text-center py-1.5 text-xs border border-border rounded-lg hover:border-gold-500/50 transition-colors has-[:checked]:bg-navy-900 has-[:checked]:text-cream-100 has-[:checked]:border-navy-900">
+              <input {...register("contactMethod")} type="radio" value={opt.value} className="sr-only peer" />
+              <div className="text-center py-1.5 text-xs border border-border rounded-lg hover:border-gold-500/50 transition-colors peer-checked:bg-navy-900 peer-checked:text-cream-100 peer-checked:border-navy-900">
                 {opt.label}
               </div>
             </label>

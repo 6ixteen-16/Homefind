@@ -14,7 +14,7 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://www.google-analytics.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
-      "img-src 'self' data: blob: https://res.cloudinary.com https://*.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com",
+      "img-src 'self' data: blob: https://res.cloudinary.com https://*.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://images.unsplash.com",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://api.cloudinary.com https://nominatim.openstreetmap.org https://*.sentry.io https://www.google-analytics.com https://challenges.cloudflare.com",
       "frame-src https://challenges.cloudflare.com https://www.youtube.com https://player.vimeo.com",
