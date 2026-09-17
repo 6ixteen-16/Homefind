@@ -1,10 +1,10 @@
-﻿import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding database with Uganda properties...\n');
+  console.log('?? Seeding database with Uganda properties...\n');
 
   // ==================== ADMIN USER ====================
   const adminHash = await bcrypt.hash('Admin@123!', 12);
@@ -19,7 +19,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log('✅ Admin created:', admin.email);
+  console.log('? Admin created:', admin.email);
 
   const agentHash = await bcrypt.hash('Agent@123!', 12);
   const agent = await prisma.user.upsert({
@@ -31,11 +31,11 @@ async function main() {
       passwordHash: agentHash,
       role: 'AGENT',
       phone: '+256 700 123 456',
-      bio: 'Senior property consultant with 8 years experience in Kampala''s premium real estate market.',
+      bio: 'Senior property consultant with 8 years experience in Kampala\'s premium real estate market.',
       isActive: true,
     },
   });
-  console.log('✅ Agent created:', agent.email);
+  console.log('? Agent created:', agent.email);
 
   // ==================== SITE SETTINGS ====================
   await prisma.siteSettings.upsert({
@@ -52,7 +52,7 @@ async function main() {
       notificationEmail: 'admin@homefind.com',
     },
   });
-  console.log('✅ Site settings initialized');
+  console.log('? Site settings initialized');
 
   // ==================== AMENITIES ====================
   const amenitiesData = [
@@ -70,7 +70,7 @@ async function main() {
     { name: 'Air Conditioning', icon: 'Wind', category: 'General' },
     { name: 'Borehole / Water Storage', icon: 'Droplets', category: 'Utilities' },
     { name: 'Servant Quarters', icon: 'Home', category: 'General' },
-    { name: 'Children''s Play Area', icon: 'Star', category: 'Recreation' },
+    { name: 'Children\'s Play Area', icon: 'Star', category: 'Recreation' },
   ];
   for (const amenity of amenitiesData) {
     await prisma.amenity.upsert({
@@ -79,7 +79,7 @@ async function main() {
       create: amenity,
     });
   }
-  console.log(✅  amenities seeded);
+  console.log(?  amenities seeded);
 
   const parking = await prisma.amenity.findFirst({ where: { name: 'Parking' } });
   const pool = await prisma.amenity.findFirst({ where: { name: 'Swimming Pool' } });
@@ -110,7 +110,7 @@ async function main() {
       squareFootage: 1850,
       yearBuilt: 2021,
       furnishingStatus: 'Fully Furnished',
-      description: '<h2>Exceptional Living in Kololo</h2><p>This stunning 3-bedroom apartment sits in one of Kampala''s most prestigious neighbourhoods. Floor-to-ceiling windows flood every room with natural light while offering breathtaking views of the city skyline. The open-plan living and dining area seamlessly connects to a private balcony, perfect for entertaining. The gourmet kitchen features Italian marble countertops, high-end appliances, and ample storage.</p>',
+      description: '<h2>Exceptional Living in Kololo</h2><p>This stunning 3-bedroom apartment sits in one of Kampala\'s most prestigious neighbourhoods. Floor-to-ceiling windows flood every room with natural light while offering breathtaking views of the city skyline. The open-plan living and dining area seamlessly connects to a private balcony, perfect for entertaining. The gourmet kitchen features Italian marble countertops, high-end appliances, and ample storage.</p>',
       address: 'Plot 45, Kololo Hill Drive',
       city: 'Kampala',
       area: 'Kololo',
@@ -138,7 +138,7 @@ async function main() {
       squareFootage: 4200,
       yearBuilt: 2020,
       furnishingStatus: 'Semi-Furnished',
-      description: '<h2>Grand Living in Naguru Heights</h2><p>This magnificent 5-bedroom mansion offers unparalleled luxury in Naguru''s most sought-after residential enclave. Set on a half-acre landscaped plot, the property boasts a sparkling swimming pool, a spacious entertainment terrace, and a lush tropical garden. The grand entrance hall leads to expansive living areas designed with Italian finishes throughout. Servant quarters and a double garage complete this extraordinary home.</p>',
+      description: '<h2>Grand Living in Naguru Heights</h2><p>This magnificent 5-bedroom mansion offers unparalleled luxury in Naguru\'s most sought-after residential enclave. Set on a half-acre landscaped plot, the property boasts a sparkling swimming pool, a spacious entertainment terrace, and a lush tropical garden. The grand entrance hall leads to expansive living areas designed with Italian finishes throughout. Servant quarters and a double garage complete this extraordinary home.</p>',
       address: 'Plot 12, Naguru Drive',
       city: 'Kampala',
       area: 'Naguru',
@@ -165,7 +165,7 @@ async function main() {
       parkingSpaces: 5,
       squareFootage: 2200,
       yearBuilt: 2019,
-      description: '<h2>Prime Commercial Space in the Heart of Kampala</h2><p>This beautifully fitted office suite is located in a landmark Grade-A building in Nakasero, Kampala''s premier business district. The space spans an entire floor with open-plan capacity for 30+ workstations, a boardroom, private offices, and a kitchenette. High-speed fibre internet, 24/7 backup power, and secure underground parking make this the ideal base for serious enterprises.</p>',
+      description: '<h2>Prime Commercial Space in the Heart of Kampala</h2><p>This beautifully fitted office suite is located in a landmark Grade-A building in Nakasero, Kampala\'s premier business district. The space spans an entire floor with open-plan capacity for 30+ workstations, a boardroom, private offices, and a kitchenette. High-speed fibre internet, 24/7 backup power, and secure underground parking make this the ideal base for serious enterprises.</p>',
       address: 'Plot 7, Parliamentary Avenue',
       city: 'Kampala',
       area: 'Nakasero',
@@ -207,7 +207,7 @@ async function main() {
     },
     {
       slug: 'land-plot-munyonyo-kampala',
-      title: 'Prime Land Plot in Munyonyo — Lake View',
+      title: 'Prime Land Plot in Munyonyo � Lake View',
       listingType: 'SALE',
       category: 'LAND',
       propertyType: 'Land',
@@ -296,7 +296,7 @@ async function main() {
       squareFootage: 2800,
       yearBuilt: 2020,
       furnishingStatus: 'Unfurnished',
-      description: '<h2>Elegant Townhouse in Muyenga Tank Hill Area</h2><p>This spacious 4-bedroom townhouse is nestled on a quiet lane in Muyenga, one of Kampala''s most desirable hillside neighbourhoods. Spread over three floors, the home offers generous living areas, a rooftop terrace with panoramic city views, and a private garden. Master bedroom has an ensuite with a jacuzzi bath. The development is fully gated with 24/7 security and a backup generator.</p>',
+      description: '<h2>Elegant Townhouse in Muyenga Tank Hill Area</h2><p>This spacious 4-bedroom townhouse is nestled on a quiet lane in Muyenga, one of Kampala\'s most desirable hillside neighbourhoods. Spread over three floors, the home offers generous living areas, a rooftop terrace with panoramic city views, and a private garden. Master bedroom has an ensuite with a jacuzzi bath. The development is fully gated with 24/7 security and a backup generator.</p>',
       address: 'Plot 9, Tank Hill Road',
       city: 'Kampala',
       area: 'Muyenga',
@@ -332,27 +332,29 @@ async function main() {
         },
       },
     });
-    console.log(✅ Property: );
+    console.log(? Property: );
   }
 
   // ==================== TESTIMONIALS ====================
   const testimonials = [
     { clientName: 'Sarah Nakato', clientTitle: 'Homeowner, Kampala', rating: 5, text: 'HomeFind made finding our dream home in Kololo absolutely effortless. Their team was professional, responsive, and truly understood what we were looking for.', isActive: true, sortOrder: 1 },
-    { clientName: 'James Mugisha', clientTitle: 'Property Investor', rating: 5, text: 'I''ve worked with many agencies across Uganda, but HomeFind stands out for their deep market knowledge and transparent communication. Highly recommended for investors.', isActive: true, sortOrder: 2 },
-    { clientName: 'Grace & Peter Ouma', clientTitle: 'First-time Buyers', rating: 5, text: 'As first-time buyers, we were nervous about the process. Our HomeFind agent guided us through every step and we couldn''t be happier with our new home in Naguru!', isActive: true, sortOrder: 3 },
+    { clientName: 'James Mugisha', clientTitle: 'Property Investor', rating: 5, text: 'I\'ve worked with many agencies across Uganda, but HomeFind stands out for their deep market knowledge and transparent communication. Highly recommended for investors.', isActive: true, sortOrder: 2 },
+    { clientName: 'Grace & Peter Ouma', clientTitle: 'First-time Buyers', rating: 5, text: 'As first-time buyers, we were nervous about the process. Our HomeFind agent guided us through every step and we couldn\'t be happier with our new home in Naguru!', isActive: true, sortOrder: 3 },
     { clientName: 'Dr. Amara Ssemwogerere', clientTitle: 'Business Owner', rating: 5, text: 'Found the perfect office space in Nakasero through HomeFind. The process was smooth and the team was extremely knowledgeable about commercial leasing in Kampala.', isActive: true, sortOrder: 4 },
   ];
   for (const t of testimonials) {
     await prisma.testimonial.create({ data: t }).catch(() => {});
   }
-  console.log(✅  testimonials seeded);
+  console.log(?  testimonials seeded);
 
-  console.log('\n🎉 Database seeded successfully!');
+  console.log('\n?? Database seeded successfully!');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Seed failed:', e);
+    console.error('? Seed failed:', e);
     process.exit(1);
   })
   .finally(() => prisma.());
+
+
