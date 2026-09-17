@@ -72,15 +72,15 @@ export function AdminListingsClient({
     updateParams({ search: search || undefined });
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, permanent: boolean = false) => {
     try {
       const res = await fetch(`/api/admin/listings/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ permanent: false }),
+        body: JSON.stringify({ permanent }),
       });
       if (!res.ok) throw new Error("Delete failed");
-      toast({ title: "Listing archived", variant: "success" });
+      toast({ title: permanent ? "Listing deleted permanently" : "Listing archived", variant: "success" });
       router.refresh();
     } catch {
       toast({ title: "Failed to delete listing", variant: "destructive" });
@@ -179,7 +179,7 @@ export function AdminListingsClient({
             <button
               onClick={async () => {
                 if (!confirm(`Delete ${selected.size} listings?`)) return;
-                await Promise.all(Array.from(selected).map((id) => handleDelete(id)));
+                await Promise.all([...selected].map((id) => handleDelete(id)));
                 setSelected(new Set());
               }}
               className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 transition-colors"
@@ -357,19 +357,27 @@ export function AdminListingsClient({
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-card rounded-2xl border border-border shadow-luxury-xl p-6 w-full max-w-sm"
             >
-              <h3 className="font-semibold text-foreground mb-2">Archive Listing?</h3>
+              <h3 className="font-semibold text-foreground mb-2">Delete Listing?</h3>
               <p className="text-sm text-muted-foreground mb-6">
-                This listing will be moved to the archive. It can be recovered within 30 days.
+                Are you sure you want to delete this listing? {userRole === "SUPER_ADMIN" ? "You have the option to archive it or permanently delete it." : "It will be moved to the archive and can be recovered within 30 days."}
               </p>
-              <div className="flex gap-3">
-                <button onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 py-2.5 border border-border rounded-lg text-sm hover:bg-muted transition-colors">
-                  Cancel
-                </button>
-                <button onClick={() => handleDelete(deleteConfirm)}
-                  className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors font-medium">
-                  Archive
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button onClick={() => setDeleteConfirm(null)}
+                    className="flex-1 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleDelete(deleteConfirm)}
+                    className="flex-1 py-2 bg-amber-600/90 text-white rounded-lg text-sm hover:bg-amber-700 transition-colors font-medium">
+                    Archive
+                  </button>
+                </div>
+                {userRole === "SUPER_ADMIN" && (
+                  <button onClick={() => handleDelete(deleteConfirm, true)}
+                    className="w-full py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors font-medium">
+                    Permanently Delete
+                  </button>
+                )}
               </div>
             </motion.div>
           </>

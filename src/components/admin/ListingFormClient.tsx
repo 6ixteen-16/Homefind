@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Save, Eye, ArrowLeft, ArrowRight } from "lucide-react";
+import { Loader2, Save, Eye, ArrowLeft, ArrowRight, Image as ImageIcon, Trash2, Star, Plus, Link2 } from "lucide-react";
 import { cn, generateSlug } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import type { Role } from "@/types";
@@ -27,7 +27,7 @@ const schema = z.object({
   landSize:        z.coerce.number().min(0).optional().nullable(),
   yearBuilt:       z.coerce.number().int().optional().nullable(),
   furnishingStatus:z.string().optional().nullable(),
-  description:     z.string().min(10, "Description must be at least 10 characters"),
+  description:     z.string().min(10, "Description must be at least 10 characters").default(""),
   address:         z.string().min(3, "Address is required"),
   city:            z.string().min(1, "City is required"),
   area:            z.string().optional().nullable(),
@@ -44,7 +44,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-const STEPS = ["Basic Info", "Location", "Details", "Description", "SEO & Publish"] as const;
+const STEPS = ["Basic Info", "Location", "Details", "Description", "Media", "SEO & Publish"] as const;
 
 interface Amenity  { id: string; name: string; category: string | null }
 interface Agent    { id: string; name: string }
@@ -68,6 +68,9 @@ export function ListingFormClient({
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>(
     listing?.amenities?.map((a: any) => a.amenityId) ?? []
   );
+  const [mediaImages, setMediaImages] = useState<any[]>(listing?.media ?? []);
+  const [imageUrlInput, setImageUrlInput] = useState("");
+  const [addingImage, setAddingImage] = useState(false);
   const isNew    = !listing;
   const isAgent  = userRole === "AGENT";
 
@@ -79,19 +82,21 @@ export function ListingFormClient({
     defaultValues: listing
       ? {
           ...listing,
-          price:    listing.price,
-          bedrooms: listing.bedrooms,
-          bathrooms:listing.bathrooms,
+          price:       listing.price,
+          bedrooms:    listing.bedrooms,
+          bathrooms:   listing.bathrooms,
+          description: listing.description ?? "",
         }
       : {
-          listingType: "SALE",
-          category:    "RESIDENTIAL",
-          propertyType:"Apartment",
-          status:      "DRAFT",
-          currency:    "USD",
-          country:     "Uganda",
-          isFeatured:  false,
+          listingType:     "SALE",
+          category:        "RESIDENTIAL",
+          propertyType:    "Apartment",
+          status:          "DRAFT",
+          currency:        "USD",
+          country:         "Uganda",
+          isFeatured:      false,
           priceNegotiable: false,
+          description:     "",
         },
   });
 
@@ -102,6 +107,72 @@ export function ListingFormClient({
     const raw  = titleValue ? `${titleValue} ${city}` : "";
     if (raw.trim()) setValue("slug", generateSlug(raw));
   }, [titleValue, watch, setValue]);
+
+  const addImage = async () => {
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    if (!url.startsWith("http")) { toast({ title: "Invalid URL", description: "Please enter a valid image URL (https://...)", variant: "destructive" }); return; }
+    // For new listings, just add to local state
+    if (isNew) {
+      setMediaImages((prev) => [...prev, { id: `temp-${Date.now()}`, url, type: "IMAGE", isFeatured: prev.length === 0, sortOrder: prev.length, altText: null, width: null, height: null }]);
+      setImageUrlInput("");
+      return;
+    }
+    setAddingImage(true);
+    try {
+      const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, type: "IMAGE" }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed to add image");
+      setMediaImages((prev) => [...prev, result.media]);
+      setImageUrlInput("");
+      toast({ title: "Image added!", variant: "success" });
+    } catch (e: any) {
+      toast({ title: "Failed to add image", description: e.message, variant: "destructive" });
+    } finally {
+      setAddingImage(false);
+    }
+  };
+
+  const deleteImage = async (mediaId: string) => {
+    if (isNew || mediaId.startsWith("temp-")) {
+      setMediaImages((prev) => prev.filter((m) => m.id !== mediaId));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId }),
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      setMediaImages((prev) => prev.filter((m) => m.id !== mediaId));
+      toast({ title: "Image removed", variant: "success" });
+    } catch (e: any) {
+      toast({ title: "Failed to remove image", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const setFeaturedImage = async (mediaId: string) => {
+    if (isNew || mediaId.startsWith("temp-")) {
+      setMediaImages((prev) => prev.map((m) => ({ ...m, isFeatured: m.id === mediaId })));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setMediaImages((prev) => prev.map((m) => ({ ...m, isFeatured: m.id === mediaId })));
+    } catch (e: any) {
+      toast({ title: "Failed to set featured image", description: e.message, variant: "destructive" });
+    }
+  };
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -118,6 +189,19 @@ export function ListingFormClient({
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Save failed");
+
+      // For new listings, attach any queued media images
+      if (isNew && mediaImages.length > 0 && result.property?.id) {
+        await Promise.all(
+          mediaImages.map((img, i) =>
+            fetch(`/api/admin/listings/${result.property.id}/media`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: img.url, type: "IMAGE", isFeatured: i === 0 }),
+            })
+          )
+        );
+      }
 
       toast({
         title: isNew ? "Listing created!" : "Listing updated!",
@@ -383,8 +467,99 @@ export function ListingFormClient({
         </div>
       )}
 
-      {/* Step 4 — SEO & Publish */}
+      {/* Step 4 — Media / Images */}
       {step === 4 && (
+        <div className="bg-card rounded-xl border border-border shadow-luxury p-6 space-y-5">
+          <div>
+            <h2 className="font-semibold text-foreground mb-1">Property Images</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              Add image URLs. Paste a direct image link (ending in .jpg, .png, .webp) or any hosted image URL (e.g. from Unsplash, Cloudinary).
+            </p>
+
+            {/* URL Input */}
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={imageUrlInput}
+                onChange={(e) => setImageUrlInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addImage(); } }}
+                placeholder="https://images.unsplash.com/photo-... or https://res.cloudinary.com/..."
+                className="input-luxury text-sm flex-1"
+              />
+              <button
+                type="button"
+                onClick={addImage}
+                disabled={addingImage || !imageUrlInput.trim()}
+                className="btn-gold flex items-center gap-2 shrink-0"
+              >
+                {addingImage ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Image Gallery */}
+          {mediaImages.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {mediaImages.map((img) => (
+                <div key={img.id} className={cn(
+                  "group relative rounded-xl overflow-hidden border-2 transition-all",
+                  img.isFeatured ? "border-gold-500 shadow-luxury" : "border-border hover:border-gold-500/50"
+                )}>
+                  <div className="aspect-video bg-muted">
+                    <img
+                      src={img.url}
+                      alt={img.altText || "Property image"}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60' viewBox='0 0 100 60'%3E%3Crect fill='%23ddd' width='100' height='60'/%3E%3Ctext fill='%23888' font-size='10' x='50' y='35' text-anchor='middle'%3ENo preview%3C/text%3E%3C/svg%3E"; }}
+                    />
+                  </div>
+                  {img.isFeatured && (
+                    <div className="absolute top-2 left-2 bg-gold-500 text-navy-900 text-2xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Star size={9} fill="currentColor" /> Featured
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    {!img.isFeatured && (
+                      <button
+                        type="button"
+                        onClick={() => setFeaturedImage(img.id)}
+                        title="Set as featured image"
+                        className="p-2 bg-gold-500 text-navy-900 rounded-lg hover:bg-gold-400 transition-colors"
+                      >
+                        <Star size={14} fill="currentColor" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteImage(img.id)}
+                      title="Remove image"
+                      className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-border rounded-xl py-12 flex flex-col items-center gap-3 text-muted-foreground">
+              <ImageIcon size={28} className="opacity-40" />
+              <p className="text-sm">No images added yet</p>
+              <p className="text-xs">Paste an image URL above and click Add</p>
+            </div>
+          )}
+
+          {isNew && mediaImages.length > 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+              ℹ️ Images will be saved when you complete and save the listing on the last step.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Step 5 — SEO & Publish */}
+      {step === 5 && (
         <div className="space-y-5">
           <div className="bg-card rounded-xl border border-border shadow-luxury p-6 space-y-4">
             <h2 className="font-semibold text-foreground">SEO</h2>

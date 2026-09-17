@@ -88,9 +88,9 @@ export function Navbar() {
         )}
       >
         <div className="flex items-center gap-6">
-          <a href="tel:+1234567890" className="flex items-center gap-1.5 hover:text-gold-400 transition-colors">
+          <a href="tel:+256700373070" className="flex items-center gap-1.5 hover:text-gold-400 transition-colors">
             <Phone size={12} />
-            +1 (234) 567-8900
+            +256 700 373 070
           </a>
           <a href="mailto:info@homefind.com" className="flex items-center gap-1.5 hover:text-gold-400 transition-colors">
             <Mail size={12} />
@@ -347,3 +347,4 @@ export function Navbar() {
     </div>
   );
 }
+

@@ -57,11 +57,11 @@ export function Footer() {
             {/* Contact Info */}
             <div className="space-y-3 text-sm">
               <a
-                href="tel:+1234567890"
+                href="tel:+256700373070"
                 className="flex items-center gap-3 text-cream-300 hover:text-gold-400 transition-colors"
               >
                 <Phone size={15} className="text-gold-500 shrink-0" />
-                +1 (234) 567-8900
+                +256 700 373 070
               </a>
               <a
                 href="mailto:info@homefind.com"
@@ -72,7 +72,7 @@ export function Footer() {
               </a>
               <div className="flex items-start gap-3 text-cream-300">
                 <MapPin size={15} className="text-gold-500 shrink-0 mt-0.5" />
-                <span>123 Business District, Suite 400<br />Kampala, Uganda</span>
+                <span>Plot 22, Acacia Avenue, Kololo<br />Kampala, Uganda</span>
               </div>
             </div>
           </div>
@@ -181,3 +181,4 @@ export function Footer() {
     </footer>
   );
 }
+
