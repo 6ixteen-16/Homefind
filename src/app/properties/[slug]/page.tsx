@@ -11,7 +11,6 @@ import { formatPrice, formatNumber, getListingTypeBadge, getStatusLabel, formatD
 import { Bed, Bath, Car, Square, Calendar, MapPin, Eye, Video, Printer, Share2, Heart, CheckCircle2, Phone, Mail, MessageCircle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import isomorphicDompurify from "isomorphic-dompurify";
 
 interface PageProps {
   params: { slug: string };
@@ -60,7 +59,6 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
   const badge = getListingTypeBadge(property.listingType);
   const statusConfig = getStatusLabel(property.status);
-  const safeDescription = isomorphicDompurify.sanitize(property.description);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -217,7 +215,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 <h2 className="font-display text-2xl font-light text-foreground mb-4">Description</h2>
                 <div
                   className="prose-luxury text-foreground/80"
-                  dangerouslySetInnerHTML={{ __html: safeDescription }}
+                  dangerouslySetInnerHTML={{ __html: property.description }}
                 />
               </section>
 
@@ -413,3 +411,4 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     </>
   );
 }
+

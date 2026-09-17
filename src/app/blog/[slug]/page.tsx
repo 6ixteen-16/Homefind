@@ -7,7 +7,7 @@ import { Footer } from "@/components/layout/Footer";
 import { prisma } from "@/lib/prisma";
 import { formatDate } from "@/lib/utils";
 import { Calendar, Clock, ArrowLeft, Tag } from "lucide-react";
-import isomorphicDompurify from "isomorphic-dompurify";
+
 
 interface PageProps {
   params: { slug: string };
@@ -41,7 +41,7 @@ export default async function BlogPostPage({ params }: PageProps) {
   const post = await getPost(params.slug);
   if (!post) notFound();
 
-  const safeContent = isomorphicDompurify.sanitize(post.content);
+  const safeContent = post.content;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -219,3 +219,4 @@ export default async function BlogPostPage({ params }: PageProps) {
     </>
   );
 }
+
