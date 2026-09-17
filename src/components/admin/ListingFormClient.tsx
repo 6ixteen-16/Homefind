@@ -10,6 +10,44 @@ import { cn, generateSlug } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import type { Role } from "@/types";
 
+// Utility to resize images and convert to base64
+const resizeImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8)); // compress to 80% quality
+      };
+      img.onerror = (error) => reject(error);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 const schema = z.object({
   title:           z.string().min(3, "Title must be at least 3 characters"),
   slug:            z.string().min(3),
@@ -108,32 +146,38 @@ export function ListingFormClient({
     if (raw.trim()) setValue("slug", generateSlug(raw));
   }, [titleValue, watch, setValue]);
 
-  const addImage = async () => {
-    const url = imageUrlInput.trim();
-    if (!url) return;
-    if (!url.startsWith("http")) { toast({ title: "Invalid URL", description: "Please enter a valid image URL (https://...)", variant: "destructive" }); return; }
-    // For new listings, just add to local state
-    if (isNew) {
-      setMediaImages((prev) => [...prev, { id: `temp-${Date.now()}`, url, type: "IMAGE", isFeatured: prev.length === 0, sortOrder: prev.length, altText: null, width: null, height: null }]);
-      setImageUrlInput("");
-      return;
-    }
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
     setAddingImage(true);
+    
     try {
-      const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, type: "IMAGE" }),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Failed to add image");
-      setMediaImages((prev) => [...prev, result.media]);
-      setImageUrlInput("");
-      toast({ title: "Image added!", variant: "success" });
-    } catch (e: any) {
-      toast({ title: "Failed to add image", description: e.message, variant: "destructive" });
+      const files = Array.from(e.target.files);
+      
+      for (const file of files) {
+        // Resize and get base64
+        const base64Url = await resizeImage(file);
+        
+        if (isNew) {
+          setMediaImages((prev) => [...prev, { id: `temp-${Date.now()}-${Math.random()}`, url: base64Url, type: "IMAGE", isFeatured: prev.length === 0, sortOrder: prev.length, altText: null, width: null, height: null }]);
+        } else {
+          const res = await fetch(`/api/admin/listings/${listing.id}/media`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: base64Url, type: "IMAGE" }),
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || "Failed to add image");
+          setMediaImages((prev) => [...prev, result.media]);
+        }
+      }
+      
+      toast({ title: "Images added successfully!", variant: "success" });
+    } catch (err: any) {
+      toast({ title: "Failed to process images", description: err.message, variant: "destructive" });
     } finally {
       setAddingImage(false);
+      // Reset input
+      e.target.value = '';
     }
   };
 
@@ -473,28 +517,33 @@ export function ListingFormClient({
           <div>
             <h2 className="font-semibold text-foreground mb-1">Property Images</h2>
             <p className="text-xs text-muted-foreground mb-4">
-              Add image URLs. Paste a direct image link (ending in .jpg, .png, .webp) or any hosted image URL (e.g. from Unsplash, Cloudinary).
+              Select one or more images from your device. Images will be optimized automatically.
             </p>
 
-            {/* URL Input */}
-            <div className="flex gap-2">
+            {/* File Input */}
+            <div className="flex gap-2 relative">
               <input
-                type="url"
-                value={imageUrlInput}
-                onChange={(e) => setImageUrlInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addImage(); } }}
-                placeholder="https://images.unsplash.com/photo-... or https://res.cloudinary.com/..."
-                className="input-luxury text-sm flex-1"
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleFileUpload}
+                disabled={addingImage}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                title="Upload Images"
               />
-              <button
-                type="button"
-                onClick={addImage}
-                disabled={addingImage || !imageUrlInput.trim()}
-                className="btn-gold flex items-center gap-2 shrink-0"
-              >
-                {addingImage ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-                Add
-              </button>
+              <div className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-xl py-6 hover:border-gold-500/50 transition-colors bg-muted/30">
+                {addingImage ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin text-gold-500" />
+                    <span className="text-sm font-medium">Processing images...</span>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon size={20} className="text-muted-foreground" />
+                    <span className="text-sm font-medium">Click or drag images to upload</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
