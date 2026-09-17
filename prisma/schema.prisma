@@ -6,9 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "mysql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ==================== AUTH ====================
@@ -394,3 +393,4 @@ model SiteSettings {
   turnstileSiteKey   String?
   updatedAt          DateTime @updatedAt
 }
+
