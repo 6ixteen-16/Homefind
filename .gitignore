@@ -27,3 +27,4 @@ out/
 # Misc
 coverage/
 .env
+.env.local
