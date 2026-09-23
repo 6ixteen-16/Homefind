@@ -83,6 +83,262 @@ Sessions disappear when the server restarts. This is suitable for local developm
 
 Interactive API documentation is available at `http://127.0.0.1:8000/docs` after startup.
 
+## RBAC and authorization enforcement
+
+The current implementation uses a small role-based access-control layer in `main.py`:
+
+1. `/api/login` authenticates the email and password against `users`.
+2. A successful login creates a random token and stores the user's database role in the in-memory `sessions` dictionary.
+3. The browser stores the returned token in `localStorage` and sends it as a bearer token.
+4. Protected handlers declare `Depends(get_admin_user)`.
+5. `get_admin_user` validates the token, requires an authenticated session, and requires the exact `Admin` role.
+6. Missing/invalid authentication returns HTTP `401`; a valid non-admin session returns HTTP `403`.
+
+### Session store
+
+This is the in-memory session store used by the authorization dependency:
+
+```python
+# Session storage (In-memory for simplicity. In production, use Redis or DB)
+# Since we are moving away from PHP sessions, we use simple token-based or cookie-based sessions.
+sessions = {}
+```
+
+### Login creates the role-bearing session
+
+After a password is verified, the login handler creates one of two session forms.
+
+For an account with OTP enabled, the session is initially unauthenticated and carries the expected OTP:
+
+```python
+if user['otp_enabled']:
+    otp = str(random.randint(100000, 999999))
+    token = str(uuid.uuid4())
+    sessions[token] = {
+        'user_id': user['user_id'],
+        'role': user['role'],
+        'expected_otp': otp
+    }
+    cursor.close()
+    conn.close()
+    return {"status": "info", "otp_required": True, "message": f"OTP sent to your email. (For demo: {otp})", "session_token": token}
+```
+
+For an account without OTP enabled, the session is immediately authenticated:
+
+```python
+else:
+    token = str(uuid.uuid4())
+    sessions[token] = {
+        'user_id': user['user_id'],
+        'role': user['role'],
+        'authenticated': True
+    }
+    log_audit_action(user['user_id'], 'LOGIN_SUCCESS', 'users', user['user_id'], None, None, request.client.host)
+    cursor.close()
+    conn.close()
+    return {"status": "success", "redirect": "dashboard.html", "token": token}
+```
+
+### OTP completion
+
+When OTP is enabled, this block changes the temporary session into an authenticated session. The role stored during the password step is retained:
+
+```python
+# OTP Verification Step
+if req.session_token and req.session_token in sessions and req.otp:
+    session = sessions[req.session_token]
+    if req.otp == session['expected_otp']:
+        log_audit_action(session['user_id'], 'LOGIN_SUCCESS', 'users', session['user_id'], None, 'OTP Verified', request.client.host)
+        # Login success - convert to authenticated session
+        del session['expected_otp']
+        session['authenticated'] = True
+        return {"status": "success", "redirect": "dashboard.html", "token": req.session_token}
+    else:
+        return {"status": "error", "message": "Invalid OTP. Please try again.", "otp_required": True}
+```
+
+### Shared backend RBAC gate
+
+Every admin authorization decision is made by this dependency:
+
+```python
+def get_admin_user(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = authorization.replace("Bearer ", "")
+    session = sessions.get(token)
+    if not session or not session.get('authenticated'):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    if session['role'] != 'Admin':
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+    return session
+```
+
+The checks have these meanings:
+
+| Check | Result |
+| --- | --- |
+| No `Authorization` header | `401 Unauthorized` |
+| Token is absent from `sessions` | `401 Invalid session` |
+| Session has no truthy `authenticated` value | `401 Invalid session` |
+| Session role is anything other than exactly `Admin` | `403 Forbidden` |
+| Valid authenticated Admin session | The session dictionary is injected into the route as `admin` |
+
+The token parsing is deliberately simple: `authorization.replace("Bearer ", "")` removes the text wherever it occurs. It is adequate for this local demo but should be replaced with strict bearer-header parsing and token expiry in production.
+
+### Protected route dependencies
+
+These are every backend handler currently protected by the shared RBAC dependency:
+
+```python
+@app.get("/api/dashboard")
+def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
+```
+
+```python
+@app.get("/api/admin/agents")
+def get_agents(admin: dict = Depends(get_admin_user)):
+
+@app.post("/api/admin/agents")
+def create_agent(req: AgentCreate, admin: dict = Depends(get_admin_user)):
+
+@app.put("/api/admin/agents/{agent_id}")
+def update_agent(agent_id: str, req: AgentUpdate, admin: dict = Depends(get_admin_user)):
+
+@app.delete("/api/admin/agents/{agent_id}")
+def delete_agent(agent_id: str, admin: dict = Depends(get_admin_user)):
+```
+
+```python
+@app.get("/api/admin/listings")
+def get_admin_listings(admin: dict = Depends(get_admin_user)):
+
+@app.post("/api/admin/listings")
+async def create_admin_listing(
+    property_name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    property_status: str = Form(...),
+    property_type: str = Form("Apartment"),
+    street: str = Form(""),
+    city: str = Form(""),
+    country: str = Form(""),
+    district: str = Form(""),
+    bedrooms: int = Form(0),
+    bathrooms: int = Form(0),
+    square_footage: float = Form(0),
+    monthly_rent: float = Form(0),
+    amenities: str = Form(""),
+    image: UploadFile = File(None),
+    admin: dict = Depends(get_admin_user)
+):
+
+@app.get("/api/admin/listings/{property_id}")
+def get_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
+
+@app.put("/api/admin/listings/{property_id}")
+async def update_admin_listing(
+    property_id: str,
+    property_name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    property_status: str = Form(...),
+    street: str = Form(""),
+    city: str = Form(""),
+    country: str = Form(""),
+    district: str = Form(""),
+    bedrooms: int = Form(0),
+    bathrooms: int = Form(0),
+    square_footage: float = Form(0),
+    monthly_rent: float = Form(0),
+    amenities: str = Form(""),
+    image: UploadFile = File(None),
+    admin: dict = Depends(get_admin_user)
+):
+
+@app.delete("/api/admin/listings/{property_id}")
+def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
+```
+
+```python
+@app.get("/api/admin/inquiries")
+def get_admin_inquiries(admin: dict = Depends(get_admin_user)):
+
+@app.put("/api/admin/inquiries/{inquiry_id}/status")
+async def update_inquiry_status(inquiry_id: str, request: Request, admin: dict = Depends(get_admin_user)):
+```
+
+FastAPI resolves `Depends(get_admin_user)` before entering each handler. If the dependency raises an `HTTPException`, the handler body is not executed.
+
+### Frontend token forwarding
+
+The login page stores a successful token in browser storage:
+
+```javascript
+if (result.token) {
+    localStorage.setItem('auth_token', result.token);
+}
+window.location.href = result.redirect;
+```
+
+The dashboard checks for a token and sends it to its protected endpoint:
+
+```javascript
+const token = localStorage.getItem('auth_token');
+if (!token) {
+    window.location.href = 'login.html';
+    return;
+}
+
+fetch('/api/dashboard', {
+    headers: {
+        'Authorization': 'Bearer ' + token
+    }
+})
+```
+
+The agent page uses a shared request-options helper for all agent-management requests:
+
+```javascript
+const token = localStorage.getItem('auth_token');
+if (!token) window.location.href = 'login.html';
+
+const apiOptions = (method = 'GET', body = null) => {
+    const opts = { headers: { 'Authorization': 'Bearer ' + token } };
+    if (method !== 'GET') {
+        opts.method = method;
+        opts.headers['Content-Type'] = 'application/json';
+        if (body) opts.body = JSON.stringify(body);
+    }
+    return opts;
+};
+```
+
+The listing page uses the same pattern for its requests:
+
+```javascript
+const token = localStorage.getItem('auth_token');
+if (!token) window.location.href = 'login.html';
+
+const apiHeaders = { 'Authorization': 'Bearer ' + token };
+```
+
+The dashboard also clears the client token and redirects when the server rejects it:
+
+```javascript
+if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem('auth_token');
+    window.location.href = 'login.html';
+}
+```
+
+These browser checks improve navigation, but they are not the security boundary. A user can bypass them with a direct HTTP request; the backend `Depends(get_admin_user)` checks are what enforce RBAC.
+
+### Current RBAC limitation
+
+The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. However, the current backend only defines one authorization policy: authenticated users must be exactly `Admin` to access dashboard/admin endpoints. There are no separate Owner, Agent, or Tenant permission dependencies yet. Non-admin users can authenticate, but they receive `403` from every endpoint protected by `get_admin_user`.
+
 ## Prerequisites
 
 Install:
