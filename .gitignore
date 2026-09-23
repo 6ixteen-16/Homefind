@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+private_uploads/
+static/uploads/*
+!static/uploads/.gitkeep
+chat_history.md
+fastapi_version/
+php_version/

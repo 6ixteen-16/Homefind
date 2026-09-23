@@ -4,8 +4,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+from pathlib import Path
 
-# Create uploads directory if it doesn't exist
+# Create public image and private verification directories if they don't exist.
 os.makedirs("static/uploads", exist_ok=True)
 
 class AgentCreate(BaseModel):
@@ -26,29 +27,60 @@ import datetime
 import random
 import uuid
 
-# Session storage (In-memory for simplicity. In production, use Redis or DB)
-# Since we are moving away from PHP sessions, we use simple token-based or cookie-based sessions.
+# In-memory sessions are process-local. Use Redis or a database for multi-worker production deployments.
 sessions = {}
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+PRIVATE_UPLOAD_DIR = Path(os.getenv("PRIVATE_UPLOAD_DIR", "private_uploads"))
+PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-def get_admin_user(authorization: Optional[str] = Header(None)):
+def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    token = authorization.replace("Bearer ", "")
+    scheme, separator, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not separator or not token.strip():
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    token = token.strip()
     session = sessions.get(token)
     if not session or not session.get('authenticated'):
         raise HTTPException(status_code=401, detail="Invalid session")
-    if session['role'] != 'Admin':
-        raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+    if session.get('expires_at', 0) <= datetime.datetime.now(datetime.timezone.utc).timestamp():
+        sessions.pop(token, None)
+        raise HTTPException(status_code=401, detail="Session expired")
+    session['token'] = token
     return session
+
+def require_roles(*allowed_roles):
+    def dependency(user: dict = Depends(get_current_user)):
+        if user.get('role') not in allowed_roles:
+            roles = ", ".join(allowed_roles)
+            raise HTTPException(status_code=403, detail=f"Forbidden: requires {roles} role")
+        return user
+    return dependency
+
+def get_admin_user(user: dict = Depends(require_roles("Admin"))):
+    return user
+
+def get_verification_user(user: dict = Depends(require_roles("Owner", "Agent"))):
+    return user
 
 
 # Configuration
-DB_HOST = "127.0.0.1"
-DB_USER = "root"
-DB_PASS = "@#6ixteenZ@2005"
-DB_NAME = "homefinder_db"
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", "3306"))
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASS = os.getenv("DB_PASS", "")
+DB_NAME = os.getenv("DB_NAME", "homefinder_db")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 
-app = FastAPI()
+app = FastAPI(docs_url=None if os.getenv("APP_ENV") == "production" else "/docs")
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 # Password verification using built-in hashlib (SHA-256)
 # NOTE: Passwords in the database should be stored as sha256 hashes.
@@ -67,6 +99,7 @@ def get_db_connection():
     try:
         return pymysql.connect(
             host=DB_HOST,
+            port=DB_PORT,
             user=DB_USER,
             password=DB_PASS,
             database=DB_NAME,
@@ -158,12 +191,15 @@ def login(req: LoginRequest, request: Request):
     # OTP Verification Step
     if req.session_token and req.session_token in sessions and req.otp:
         session = sessions[req.session_token]
+        if session.get('expires_at', 0) <= datetime.datetime.now(datetime.timezone.utc).timestamp():
+            sessions.pop(req.session_token, None)
+            return {"status": "error", "message": "Session expired", "otp_required": True}
         if req.otp == session['expected_otp']:
             log_audit_action(session['user_id'], 'LOGIN_SUCCESS', 'users', session['user_id'], None, 'OTP Verified', request.client.host)
             # Login success - convert to authenticated session
             del session['expected_otp']
             session['authenticated'] = True
-            return {"status": "success", "redirect": "dashboard.html", "token": req.session_token}
+            return {"status": "success", "redirect": "verification.html" if session['role'] in ('Owner', 'Agent') else "dashboard.html", "token": req.session_token, "role": session['role']}
         else:
             return {"status": "error", "message": "Invalid OTP. Please try again.", "otp_required": True}
 
@@ -215,7 +251,8 @@ def login(req: LoginRequest, request: Request):
             sessions[token] = {
                 'user_id': user['user_id'],
                 'role': user['role'],
-                'expected_otp': otp
+                'expected_otp': otp,
+                'expires_at': datetime.datetime.now(datetime.timezone.utc).timestamp() + SESSION_TTL_SECONDS
             }
             cursor.close()
             conn.close()
@@ -225,12 +262,13 @@ def login(req: LoginRequest, request: Request):
             sessions[token] = {
                 'user_id': user['user_id'],
                 'role': user['role'],
-                'authenticated': True
+                'authenticated': True,
+                'expires_at': datetime.datetime.now(datetime.timezone.utc).timestamp() + SESSION_TTL_SECONDS
             }
             log_audit_action(user['user_id'], 'LOGIN_SUCCESS', 'users', user['user_id'], None, None, request.client.host)
             cursor.close()
             conn.close()
-            return {"status": "success", "redirect": "dashboard.html", "token": token}
+            return {"status": "success", "redirect": "verification.html" if user['role'] in ('Owner', 'Agent') else "dashboard.html", "token": token, "role": user['role']}
     else:
         attempts = user['failed_login_attempts'] + 1
         locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)) if attempts >= 5 else None
@@ -371,8 +409,91 @@ async def submit_inquiry(request: Request):
         conn.close()
 
 @app.post("/api/logout")
-def logout():
+def logout(user: dict = Depends(get_current_user)):
+    sessions.pop(user['token'], None)
     return {"status": "success", "message": "Logged out"}
+
+ALLOWED_IDENTITY_TYPES = {
+    "face_photo": {"image/jpeg", "image/png", "image/webp"},
+    "national_id_front": {"image/jpeg", "image/png", "image/webp", "application/pdf"},
+    "national_id_back": {"image/jpeg", "image/png", "image/webp", "application/pdf"},
+    "land_title": {"application/pdf"},
+}
+MAX_VERIFICATION_FILE_BYTES = 10 * 1024 * 1024
+
+async def save_private_document(document: UploadFile, document_type: str, user_id: str):
+    if not document or document.content_type not in ALLOWED_IDENTITY_TYPES[document_type]:
+        raise HTTPException(status_code=400, detail=f"Invalid file type for {document_type}")
+    content = await document.read(MAX_VERIFICATION_FILE_BYTES + 1)
+    if len(content) > MAX_VERIFICATION_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Verification file exceeds 10 MB")
+    extension = Path(document.filename or "upload").suffix.lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".pdf"}:
+        raise HTTPException(status_code=400, detail="Unsupported file extension")
+    user_dir = PRIVATE_UPLOAD_DIR / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    destination = user_dir / f"{document_type}_{uuid.uuid4().hex}{extension}"
+    destination.write_bytes(content)
+    return str(destination)
+
+@app.post("/api/verification/documents")
+async def upload_verification_documents(
+    face_photo: UploadFile = File(...),
+    national_id_front: UploadFile = File(...),
+    national_id_back: UploadFile = File(...),
+    land_title: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_verification_user),
+):
+    if user['role'] == 'Owner' and not land_title:
+        raise HTTPException(status_code=400, detail="Owners must upload a land title PDF")
+    documents = {
+        "face_photo": face_photo,
+        "national_id_front": national_id_front,
+        "national_id_back": national_id_back,
+    }
+    if land_title:
+        documents["land_title"] = land_title
+    saved = []
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        for document_type, document in documents.items():
+            path = await save_private_document(document, document_type, user['user_id'])
+            cursor.execute(
+                "INSERT INTO identity_documents (document_id, user_id, document_type, file_path, uploaded_at) VALUES (%s, %s, %s, %s, NOW())",
+                (str(uuid.uuid4()), user['user_id'], document_type, path),
+            )
+            saved.append(document_type)
+        conn.commit()
+        log_audit_action(user['user_id'], 'UPLOAD_VERIFICATION_DOCUMENTS', 'identity_documents', user['user_id'], None, ','.join(saved), None)
+        return {"status": "success", "documents": saved}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not save verification documents") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/verification/{user_id}")
+def get_verification_documents(user_id: str, admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT document_id, user_id, document_type, file_path, uploaded_at, verified_at FROM identity_documents WHERE user_id = %s ORDER BY uploaded_at DESC",
+            (user_id,),
+        )
+        return {"status": "success", "data": cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.get("/api/admin/agents")
 def get_agents(admin: dict = Depends(get_admin_user)):
