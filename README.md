@@ -1,0 +1,485 @@
+# Homefind FastAPI
+
+Homefind is a property listing and property-management system built with FastAPI, MySQL, and a static HTML/CSS/JavaScript frontend served by the API.
+
+## Features
+
+- Public property browsing and property detail pages.
+- Property search/listing data loaded from the API.
+- Contact and property inquiry forms.
+- User login with role-based access.
+- Admin dashboard statistics and audit-log activity.
+- Admin agent management.
+- Admin property/listing management, including image uploads.
+- Admin inquiry review and status updates.
+- In-memory bearer-token sessions for local development.
+
+## Technology
+
+- Python 3.10 or newer recommended.
+- FastAPI 0.104.1.
+- Uvicorn 0.24.0.
+- Pydantic 2.5.0.
+- PyMySQL 1.1.0.
+- MySQL 8.0 or newer recommended.
+- Static HTML, CSS, and browser JavaScript.
+
+## Project structure
+
+```text
+.
+|-- main.py                  FastAPI application and routes
+|-- requirements.txt         Python dependencies
+|-- run_seed.py              Creates local test users and profiles
+|-- seed.sql                 Example property and user data inserts
+|-- test_users.sql           Additional test-user inserts
+|-- static/
+|   |-- index.html            Public home page
+|   |-- properties.html       Public property list
+|   |-- property.html         Public property detail page
+|   |-- login.html            Login page
+|   |-- dashboard.html        Admin dashboard
+|   |-- admin_agents.html     Admin agent management
+|   |-- admin_listings.html   Admin listing management
+|   |-- admin_inquiries.html  Admin inquiry management
+|   |-- uploads/              Property images
+|   `-- style.css             Shared styles
+```
+
+`main.py` mounts `static/` at the root URL. The browser pages call JSON endpoints below `/api/...`. Each API operation opens a MySQL connection using the database constants near the top of `main.py`.
+
+Successful login creates a bearer token in an in-memory Python dictionary. Admin requests must send:
+
+```http
+Authorization: Bearer <token>
+```
+
+Sessions disappear when the server restarts. This is suitable for local development only.
+
+## API overview
+
+### Public endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/get_properties` | Return published properties. |
+| GET | `/api/get_property?id=<property_id>` | Return one property and its media. |
+| POST | `/api/login` | Authenticate a user and return a session token. |
+| POST | `/api/contact` | Submit a contact message. |
+| POST | `/api/submit_inquiry` | Submit an inquiry for a property. |
+| POST | `/api/logout` | End the current local session. |
+
+### Admin endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/dashboard` | Dashboard counts and recent activity. |
+| GET/POST | `/api/admin/agents` | List or create agents. |
+| PUT/DELETE | `/api/admin/agents/{agent_id}` | Update or delete an agent. |
+| GET/POST | `/api/admin/listings` | List or create properties. |
+| GET/PUT/DELETE | `/api/admin/listings/{property_id}` | Read, update, or delete a property. |
+| GET | `/api/admin/inquiries` | List submitted inquiries. |
+| PUT | `/api/admin/inquiries/{inquiry_id}/status` | Change inquiry status. |
+
+Interactive API documentation is available at `http://127.0.0.1:8000/docs` after startup.
+
+## Prerequisites
+
+Install:
+
+1. Git.
+2. Python 3.10 or newer.
+3. MySQL Server 8.0 or newer, including the `mysql` client.
+4. Permission to create a local MySQL database and user.
+
+MySQL Workbench can be used instead of the command-line client, but run the SQL in the order documented below.
+
+## Windows setup
+
+Open PowerShell:
+
+```powershell
+git clone https://github.com/6ixteen-16/Homefind.git
+Set-Location Homefind
+
+py --version
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If PowerShell blocks activation:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+.\.venv\Scripts\Activate.ps1
+```
+
+Alternatively, from Command Prompt use `.venv\Scripts\activate.bat`.
+
+## macOS setup
+
+Open Terminal:
+
+```bash
+git clone https://github.com/6ixteen-16/Homefind.git
+cd Homefind
+
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## Database setup from scratch
+
+`seed.sql` contains data inserts only. It does not create the database or tables, so create the schema before importing it.
+
+### 1. Create the database
+
+```bash
+mysql -u root -p
+```
+
+Then run:
+
+```sql
+CREATE DATABASE IF NOT EXISTS homefinder_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE homefinder_db;
+```
+
+### 2. Create the tables
+
+Run this DDL in `homefinder_db`:
+
+```sql
+USE homefinder_db;
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id VARCHAR(50) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL,
+    otp_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    password_last_changed DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    failed_login_attempts INT NOT NULL DEFAULT 0,
+    locked_until DATETIME NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS owner (
+    owner_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS agent (
+    agent_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NULL,
+    name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(50) NULL,
+    email VARCHAR(255) NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS tenant (
+    tenant_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    date_of_birth DATE NULL,
+    address VARCHAR(500) NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS owner_phone_number (
+    owner_id VARCHAR(50) NOT NULL,
+    phone_number VARCHAR(50) NOT NULL,
+    PRIMARY KEY (owner_id, phone_number),
+    FOREIGN KEY (owner_id) REFERENCES owner(owner_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS tenant_phone_number (
+    tenant_id VARCHAR(50) NOT NULL,
+    phone_number VARCHAR(50) NOT NULL,
+    PRIMARY KEY (tenant_id, phone_number),
+    FOREIGN KEY (tenant_id) REFERENCES tenant(tenant_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS property (
+    property_id VARCHAR(50) PRIMARY KEY,
+    property_name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    street VARCHAR(255) NULL,
+    district VARCHAR(255) NULL,
+    city VARCHAR(255) NULL,
+    country VARCHAR(255) NULL,
+    property_status VARCHAR(50) NOT NULL DEFAULT 'Draft',
+    price DECIMAL(15,2) NOT NULL DEFAULT 0,
+    is_featured TINYINT(1) NOT NULL DEFAULT 0,
+    owner_id VARCHAR(50) NULL,
+    views INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES owner(owner_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS listing (
+    listing_id VARCHAR(50) PRIMARY KEY,
+    date_listed DATETIME NULL,
+    description TEXT NULL,
+    listing_status VARCHAR(50) NOT NULL DEFAULT 'Active',
+    agent_id VARCHAR(50) NULL,
+    FOREIGN KEY (agent_id) REFERENCES agent(agent_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS advertised_as (
+    listing_id VARCHAR(50) NOT NULL,
+    property_id VARCHAR(50) NOT NULL,
+    PRIMARY KEY (listing_id, property_id),
+    FOREIGN KEY (listing_id) REFERENCES listing(listing_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS property_media (
+    media_id VARCHAR(50) PRIMARY KEY,
+    property_id VARCHAR(50) NOT NULL,
+    url VARCHAR(500) NOT NULL,
+    type VARCHAR(30) NOT NULL DEFAULT 'IMAGE',
+    is_featured TINYINT(1) NOT NULL DEFAULT 0,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS unit (
+    property_id VARCHAR(50) NOT NULL,
+    unit_number VARCHAR(50) NOT NULL,
+    floor VARCHAR(50) NULL,
+    bedrooms INT NULL,
+    bathrooms INT NULL,
+    square_footage DECIMAL(12,2) NULL,
+    monthly_rent DECIMAL(15,2) NULL,
+    availability_status VARCHAR(50) NULL,
+    PRIMARY KEY (property_id, unit_number),
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS apartment (
+    property_id VARCHAR(50) PRIMARY KEY,
+    number_of_units INT NULL,
+    amenities TEXT NULL,
+    management_fee DECIMAL(15,2) NULL,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS condominium (
+    property_id VARCHAR(50) PRIMARY KEY,
+    amenities TEXT NULL,
+    management_fee DECIMAL(15,2) NULL,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS rental_house (
+    property_id VARCHAR(50) PRIMARY KEY,
+    house_size DECIMAL(12,2) NULL,
+    yard_size DECIMAL(12,2) NULL,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS inquiry (
+    inquiry_id VARCHAR(50) PRIMARY KEY,
+    property_id VARCHAR(50) NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NULL,
+    message TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'NEW',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (property_id) REFERENCES property(property_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    log_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NULL,
+    action VARCHAR(100) NOT NULL,
+    table_name VARCHAR(100) NULL,
+    record_id VARCHAR(100) NULL,
+    old_value TEXT NULL,
+    new_value TEXT NULL,
+    ip_address VARCHAR(100) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+```
+
+### 3. Import sample data
+
+From the repository root:
+
+macOS, Linux, or Windows Command Prompt:
+
+```bash
+mysql -u root -p homefinder_db < seed.sql
+```
+
+Windows PowerShell:
+
+```powershell
+Get-Content .\seed.sql | mysql -u root -p homefinder_db
+```
+
+The seed includes sample owners, properties, units, media, and related records. Its `INSERT IGNORE` statements make rerunning it safe for existing keys.
+
+### 4. Create demo accounts
+
+`run_seed.py` inserts test users and their profiles. Before running it, update the database constants in both `main.py` and `run_seed.py` if your MySQL credentials differ from the local defaults.
+
+```bash
+python run_seed.py
+```
+
+All demo users use the password `password123`:
+
+| Email | Role |
+| --- | --- |
+| `test_admin@homefind.com` | Admin |
+| `test_owner@homefind.com` | Owner |
+| `test_agent@homefind.com` | Agent |
+| `test_tenant@homefind.com` | Tenant |
+
+Use the admin account to test the dashboard and admin pages.
+
+## Database configuration
+
+The current application reads these constants directly from `main.py`:
+
+```python
+DB_HOST = "127.0.0.1"
+DB_USER = "root"
+DB_PASS = "<your-local-mysql-password>"
+DB_NAME = "homefinder_db"
+```
+
+`run_seed.py` has a matching set of constants. Keep them synchronized. For production, move credentials to environment variables or a secrets manager and never commit real passwords.
+
+## Run the application
+
+Activate `.venv` first.
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+macOS:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Open:
+
+- Home: `http://127.0.0.1:8000/`
+- Properties: `http://127.0.0.1:8000/properties.html`
+- Login: `http://127.0.0.1:8000/login.html`
+- Admin dashboard: `http://127.0.0.1:8000/dashboard.html`
+- API docs: `http://127.0.0.1:8000/docs`
+
+Stop the server with `Ctrl+C`.
+
+## Development checks
+
+```bash
+# Activate .venv first
+pip install -r requirements.txt
+python -m py_compile main.py run_seed.py
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Admin image uploads are written to `static/uploads/`, and their relative URLs are stored in `property_media`.
+
+## Troubleshooting
+
+### `ModuleNotFoundError`
+
+Activate the virtual environment and reinstall dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+On Windows, use `py -m pip` if `python` points to another installation.
+
+### Database connection failure
+
+Check that MySQL is running, `homefinder_db` exists, all tables were created, and the credentials in `main.py` match the local MySQL account. Test directly with:
+
+```bash
+mysql -h 127.0.0.1 -u root -p homefinder_db
+```
+
+### Missing tables
+
+The repository seed is data-only. Run the DDL above before importing `seed.sql`, then run `python run_seed.py`.
+
+### Port 8000 is busy
+
+Use another port:
+
+```bash
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001
+```
+
+Then open `http://127.0.0.1:8001/`.
+
+### Login is locked
+
+The API locks an account after repeated failed attempts. For local development, wait for the lock period or reset the account values:
+
+```sql
+USE homefinder_db;
+UPDATE users
+SET failed_login_attempts = 0, locked_until = NULL
+WHERE email = 'test_admin@homefind.com';
+```
+
+### Static pages load but API calls fail
+
+Open the pages through Uvicorn at `http://127.0.0.1:8000/`. Do not open the HTML files directly with `file:///...`, because browser requests to `/api/...` require the FastAPI server.
+
+## Security and production notes
+
+This repository is a local development setup. Before production use:
+
+- Remove hard-coded database credentials and use environment variables.
+- Rotate credentials that were ever committed or shared.
+- Replace SHA-256 password handling with Argon2 or bcrypt consistently.
+- Replace in-memory sessions with persistent, expiring sessions.
+- Add HTTPS and secure cookie/token handling.
+- Configure CORS narrowly for known frontend origins.
+- Validate and restrict uploaded file types and sizes.
+- Run behind a production ASGI server or process manager.
+- Add database migrations instead of relying on manually copied DDL.
+- Review authorization for every admin endpoint.
