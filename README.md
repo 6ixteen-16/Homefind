@@ -96,7 +96,7 @@ The current implementation uses a small role-based access-control layer in `main
 
 ### Session store
 
-This is the in-memory session store used by the authorization dependency:
+The current development session store is in-memory. It now has an expiration timestamp, but a production multi-worker deployment should replace it with Redis or a database-backed session store:
 
 ```python
 # Session storage (In-memory for simplicity. In production, use Redis or DB)
@@ -185,7 +185,7 @@ The checks have these meanings:
 | Session role is anything other than exactly `Admin` | `403 Forbidden` |
 | Valid authenticated Admin session | The session dictionary is injected into the route as `admin` |
 
-The token parsing is deliberately simple: `authorization.replace("Bearer ", "")` removes the text wherever it occurs. It is adequate for this local demo but should be replaced with strict bearer-header parsing and token expiry in production.
+The backend uses strict bearer-header parsing, session expiry, and token removal on logout. The current in-memory store is still process-local, so use a shared session store when running multiple workers or replicas.
 
 ### Protected route dependencies
 
@@ -335,9 +335,28 @@ if (res.status === 401 || res.status === 403) {
 
 These browser checks improve navigation, but they are not the security boundary. A user can bypass them with a direct HTTP request; the backend `Depends(get_admin_user)` checks are what enforce RBAC.
 
-### Current RBAC limitation
+### Current RBAC scope
 
-The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. However, the current backend only defines one authorization policy: authenticated users must be exactly `Admin` to access dashboard/admin endpoints. There are no separate Owner, Agent, or Tenant permission dependencies yet. Non-admin users can authenticate, but they receive `403` from every endpoint protected by `get_admin_user`.
+The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. Admin routes require `Admin`. The verification upload route permits `Owner` and `Agent`; owners must provide a land-title PDF while agents may omit it. Tenant-specific business routes have not been added yet.
+
+## Identity verification documents
+
+Owners and agents authenticate through `/api/login`, then are directed to `verification.html`. The page posts multipart form data to `/api/verification/documents` with:
+
+- `face_photo`: required JPEG, PNG, or WebP face photo.
+- `national_id_front`: required national-ID front image or PDF.
+- `national_id_back`: required national-ID back image or PDF.
+- `land_title`: PDF; required for `Owner`, optional for `Agent`.
+
+The endpoint requires an authenticated `Owner` or `Agent` session. Files are limited to 10 MB each, assigned random filenames, and stored under `PRIVATE_UPLOAD_DIR` outside the publicly mounted `static/` directory. Admins can review metadata through `/api/admin/verification/{user_id}`. The current endpoint stores document metadata and paths; verification decisions should be implemented as a separate reviewed workflow before production launch.
+
+Apply the document table after the base schema exists:
+
+```bash
+mysql -u root -p homefinder_db < schema_security.sql
+```
+
+Do not serve `private_uploads/` through a static-file mount or expose its paths directly to browsers. In production, encrypt documents at rest, restrict administrator access, define retention/deletion rules, and obtain the consent required by local privacy law before collecting identity and land-title documents.
 
 ## Prerequisites
 
@@ -635,7 +654,7 @@ DB_PASS = "<your-local-mysql-password>"
 DB_NAME = "homefinder_db"
 ```
 
-`run_seed.py` has a matching set of constants. Keep them synchronized. For production, move credentials to environment variables or a secrets manager and never commit real passwords.
+`run_seed.py` reads the same environment variables. Copy `.env.example` to `.env` and set real values in your process manager or deployment secret store. The application does not load `.env` automatically; on Windows PowerShell use `$env:DB_PASS = '...'`, on macOS use `export DB_PASS='...'`, or inject the variables through Docker. Never commit `.env`.
 
 ## Run the application
 
@@ -675,6 +694,27 @@ python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Admin image uploads are written to `static/uploads/`, and their relative URLs are stored in `property_media`.
+
+## Production deployment
+
+The repository includes a `Dockerfile`. Build and run it with environment variables supplied outside the image:
+
+```bash
+docker build -t homefind-api .
+docker run --rm -p 8000:8000 --env-file .env \
+    -v homefind_private_uploads:/app/private_uploads \
+    homefind-api
+```
+
+The image starts one Uvicorn worker because sessions are currently process-local. Put it behind HTTPS termination and a reverse proxy, and do not scale to multiple workers or replicas until sessions move to Redis or another shared store. Set `APP_ENV=production` to disable the interactive `/docs` endpoint. Set `CORS_ORIGINS` to a comma-separated allowlist of trusted origins; leave it empty when the frontend is served by this same application.
+
+For a non-container deployment, install the requirements in a virtual environment and run:
+
+```bash
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Use a service manager to restart the process, a reverse proxy for TLS and request limits, a firewall that exposes only the proxy, and encrypted backups for MySQL and private verification files.
 
 ## Troubleshooting
 
@@ -727,15 +767,19 @@ Open the pages through Uvicorn at `http://127.0.0.1:8000/`. Do not open the HTML
 
 ## Security and production notes
 
-This repository is a local development setup. Before production use:
+Production hardening included in this branch:
 
-- Remove hard-coded database credentials and use environment variables.
+- Database credentials and session settings are read from environment variables.
+- Sessions expire according to `SESSION_TTL_SECONDS`, and logout removes the token.
+- Admin, Owner, and Agent permissions are enforced by backend dependencies.
+- Verification uploads enforce role, file type, and 10 MB size limits.
+- Verification files are stored outside the public static directory.
+
+Remaining production requirements:
+
 - Rotate credentials that were ever committed or shared.
 - Replace SHA-256 password handling with Argon2 or bcrypt consistently.
-- Replace in-memory sessions with persistent, expiring sessions.
-- Add HTTPS and secure cookie/token handling.
-- Configure CORS narrowly for known frontend origins.
-- Validate and restrict uploaded file types and sizes.
-- Run behind a production ASGI server or process manager.
-- Add database migrations instead of relying on manually copied DDL.
-- Review authorization for every admin endpoint.
+- Replace in-memory sessions with Redis or a database-backed store before using multiple workers.
+- Add HTTPS, secure cookie/token handling, rate limits, malware scanning, and audit review for identity files.
+- Add formal database migrations instead of relying on manually copied SQL.
+- Add tenant-specific routes and policies when tenant workflows are implemented.
