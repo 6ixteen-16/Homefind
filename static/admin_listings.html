@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Listings - Homefinder Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .admin-layout { display: flex; min-height: 100vh; }
+        .sidebar { width: 250px; background: var(--white); border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 1.5rem; flex-shrink: 0; }
+        .main-content { flex: 1; padding: 2rem; background: var(--background); overflow-x: auto; }
+        .sidebar a { display: block; padding: 0.75rem 1rem; color: var(--text-color); text-decoration: none; border-radius: 8px; margin-bottom: 0.5rem; font-weight: 500; transition: all 0.2s; }
+        .sidebar a:hover, .sidebar a.active { background: #f3f4f6; color: var(--primary-color); }
+        .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        
+        .panel { background: var(--white); border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 1rem 1.5rem; background: #f9fafb; font-weight: 600; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid #e5e7eb; }
+        td { padding: 0.85rem 1.5rem; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
+        tr:hover td { background: #f9fafb; }
+        
+        .action-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; color: var(--text-muted); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.8rem; margin-left: 0.3rem; }
+        .action-btn:hover { background: #e5e7eb; color: var(--text-color); }
+        .action-btn.delete:hover { color: #dc2626; background: #fee2e2; border-color: #fca5a5; }
+        .action-btn.edit:hover { color: #1d4ed8; background: #eff6ff; border-color: #93c5fd; }
+
+        .badge { padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; border: 1px solid transparent; }
+        .badge-pub { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+        .badge-draft { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 50; }
+        .modal { background: var(--white); padding: 2rem; border-radius: 12px; width: 680px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; }
+        .modal h2 { margin-bottom: 1.5rem; font-size: 1.25rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.4rem; color: #374151; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; font-size: 0.9rem; box-sizing: border-box; }
+        .form-group textarea { resize: vertical; }
+        .section-label { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 1.5rem 0 0.75rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="admin-layout">
+        <div class="sidebar">
+            <h2 style="margin-bottom: 2rem; color: var(--primary-color);">Homefind Admin</h2>
+            <a href="dashboard.html">Dashboard</a>
+            <a href="admin_agents.html">Manage Agents</a>
+            <a href="admin_listings.html" class="active">Manage Listings</a>
+            <a href="admin_inquiries.html">Inquiries</a>
+            <div style="margin-top: auto;">
+                <a href="index.html">← Back to Site</a>
+                <a href="#" onclick="logout()" style="color: #dc2626;">Logout</a>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="header-section">
+                <div>
+                    <h1 style="font-weight: 300; font-size: 2.2rem; margin-bottom: 0.5rem;">Listings</h1>
+                    <p style="color: var(--text-muted);">Manage all property listings on the platform.</p>
+                </div>
+                <button class="btn-primary" onclick="openModal()" style="background: #d97706;">+ New Listing</button>
+            </div>
+
+            <div class="panel">
+                <table id="listings-table">
+                    <thead>
+                        <tr>
+                            <th>Property Name</th>
+                            <th>City</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                            <th>Views</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading listings...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Listing Modal -->
+    <div class="modal-overlay" id="listing-modal">
+        <div class="modal">
+            <h2 id="modal-title">Add New Listing</h2>
+            <form id="listing-form" enctype="multipart/form-data">
+                <input type="hidden" id="editing-id">
+
+                <!-- Basic Info -->
+                <div class="form-group">
+                    <label>Property Title *</label>
+                    <input type="text" name="property_name" id="f-name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Description *</label>
+                    <textarea name="description" id="f-desc" rows="3" required></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Property Type</label>
+                        <select name="property_type" id="f-type">
+                            <option value="Apartment">Apartment</option>
+                            <option value="Condominium">Condominium</option>
+                            <option value="Rental House">Rental House</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select name="property_status" id="f-status">
+                            <option value="Published">Published</option>
+                            <option value="Draft">Draft</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Price (USD) *</label>
+                        <input type="number" name="price" id="f-price" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Monthly Rent (USD)</label>
+                        <input type="number" name="monthly_rent" id="f-rent" step="0.01" placeholder="0">
+                    </div>
+                </div>
+
+                <div class="section-label">Location</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Street</label>
+                        <input type="text" name="street" id="f-street">
+                    </div>
+                    <div class="form-group">
+                        <label>District</label>
+                        <input type="text" name="district" id="f-district">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>City</label>
+                        <input type="text" name="city" id="f-city">
+                    </div>
+                    <div class="form-group">
+                        <label>Country</label>
+                        <input type="text" name="country" id="f-country">
+                    </div>
+                </div>
+
+                <div class="section-label">Unit Details</div>
+                <div class="form-row-3">
+                    <div class="form-group">
+                        <label>Bedrooms</label>
+                        <input type="number" name="bedrooms" id="f-beds" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Bathrooms</label>
+                        <input type="number" name="bathrooms" id="f-baths" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Size (sq ft)</label>
+                        <input type="number" name="square_footage" id="f-sqft" step="0.01" value="0">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Amenities (comma-separated)</label>
+                    <input type="text" name="amenities" id="f-amenities" placeholder="e.g. Pool, Gym, Parking, Security">
+                </div>
+
+                <div class="section-label">Media</div>
+                <div class="form-group">
+                    <label id="image-label">Featured Image</label>
+                    <input type="file" name="image" id="f-image" accept="image/*">
+                    <div id="current-image" style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);"></div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" onclick="closeModal()" style="background: none; border: none; font-weight: 500; cursor: pointer; padding: 0.5rem 1rem;">Cancel</button>
+                    <button type="submit" class="btn-primary" id="save-btn" style="background: #d97706;">Save Listing</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('auth_token');
+        if (!token) window.location.href = 'login.html';
+
+        const apiHeaders = { 'Authorization': 'Bearer ' + token };
+        let editingId = null;
+
+        function fetchListings() {
+            fetch('/api/admin/listings', { headers: apiHeaders })
+                .then(res => res.json())
+                .then(res => {
+                    const tbody = document.querySelector('#listings-table tbody');
+                    if (res.status === 'success') {
+                        if (res.data.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">No listings found.</td></tr>';
+                            return;
+                        }
+                        tbody.innerHTML = res.data.map(listing => `
+                            <tr>
+                                <td style="font-weight: 500;">
+                                    <a href="property.html?id=${listing.property_id}" target="_blank" style="color: inherit; text-decoration: none;">${listing.property_name}</a>
+                                </td>
+                                <td style="color: var(--text-muted);">${listing.city || '—'}</td>
+                                <td>$${parseFloat(listing.price || 0).toLocaleString()}</td>
+                                <td><span class="badge ${listing.property_status === 'Published' ? 'badge-pub' : 'badge-draft'}">${listing.property_status}</span></td>
+                                <td>${listing.views || 0}</td>
+                                <td style="text-align: right;">
+                                    <button class="action-btn edit" onclick="editListing('${listing.property_id}')">Edit</button>
+                                    <button class="action-btn delete" onclick="deleteListing('${listing.property_id}')">Delete</button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        alert('Error: ' + res.message);
+                    }
+                });
+        }
+
+        function openModal() {
+            editingId = null;
+            document.getElementById('editing-id').value = '';
+            document.getElementById('modal-title').innerText = 'Add New Listing';
+            document.getElementById('save-btn').innerText = 'Save Listing';
+            document.getElementById('listing-form').reset();
+            document.getElementById('current-image').innerText = '';
+            document.getElementById('image-label').innerText = 'Featured Image';
+            document.getElementById('listing-modal').style.display = 'flex';
+        }
+
+        function editListing(id) {
+            fetch(`/api/admin/listings/${id}`, { headers: apiHeaders })
+                .then(res => res.json())
+                .then(res => {
+                    if (res.status !== 'success') { alert(res.message); return; }
+                    const p = res.data;
+                    editingId = id;
+                    document.getElementById('editing-id').value = id;
+                    document.getElementById('modal-title').innerText = 'Edit Listing';
+                    document.getElementById('save-btn').innerText = 'Update Listing';
+                    
+                    document.getElementById('f-name').value = p.property_name || '';
+                    document.getElementById('f-desc').value = p.description || '';
+                    document.getElementById('f-status').value = p.property_status || 'Published';
+                    document.getElementById('f-price').value = p.price || '';
+                    document.getElementById('f-rent').value = p.monthly_rent || '';
+                    document.getElementById('f-street').value = p.street || '';
+                    document.getElementById('f-district').value = p.district || '';
+                    document.getElementById('f-city').value = p.city || '';
+                    document.getElementById('f-country').value = p.country || '';
+                    document.getElementById('f-beds').value = p.bedrooms || 0;
+                    document.getElementById('f-baths').value = p.bathrooms || 0;
+                    document.getElementById('f-sqft').value = p.square_footage || 0;
+                    document.getElementById('f-amenities').value = p.amenities || '';
+                    document.getElementById('image-label').innerText = 'Replace Featured Image (optional)';
+                    document.getElementById('current-image').innerText = '';
+
+                    document.getElementById('listing-modal').style.display = 'flex';
+                });
+        }
+
+        function closeModal() {
+            document.getElementById('listing-modal').style.display = 'none';
+        }
+
+        function deleteListing(id) {
+            if (!confirm('Delete this listing? This cannot be undone.')) return;
+            fetch(`/api/admin/listings/${id}`, { method: 'DELETE', headers: apiHeaders })
+                .then(res => res.json())
+                .then(res => {
+                    if (res.status === 'success') fetchListings();
+                    else alert(res.message);
+                });
+        }
+
+        document.getElementById('listing-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const formData = new FormData(this);
+            const id = document.getElementById('editing-id').value;
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `/api/admin/listings/${id}` : '/api/admin/listings';
+
+            fetch(url, {
+                method: method,
+                headers: { 'Authorization': 'Bearer ' + token },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(res => {
+                btn.disabled = false;
+                btn.innerText = id ? 'Update Listing' : 'Save Listing';
+                if (res.status === 'success') {
+                    closeModal();
+                    fetchListings();
+                } else {
+                    alert('Error: ' + res.message);
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerText = id ? 'Update Listing' : 'Save Listing';
+                alert('Network error: ' + err.message);
+            });
+        });
+
+        function logout() {
+            localStorage.removeItem('auth_token');
+            window.location.href = 'login.html';
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchListings);
+    </script>
+</body>
+</html>

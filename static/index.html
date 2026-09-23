@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homefinder - Real Estate Platform</title>
+    <meta name="description" content="Find your dream home with Homefinder. We offer a wide range of properties to suit your needs.">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">Homefind</a>
+        <ul class="nav-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="about.html">About Us</a></li>
+            <li><a href="properties.html">Properties</a></li>
+            <li><a href="contact.html">Contact</a></li>
+        </ul>
+        <a href="login.html" class="btn-primary">Sign In</a>
+    </nav>
+
+    <div class="container">
+        <!-- Hero Section -->
+        <section class="hero">
+            <h1>Find Your Dream Home</h1>
+            <p>Discover the best properties in your favorite locations. From cozy apartments to luxurious houses.</p>
+            <a href="properties.html" class="btn-primary">Browse Properties</a>
+        </section>
+
+        <!-- Featured Properties Grid -->
+        <h2 style="margin-bottom: 1.5rem;">Featured Properties</h2>
+        <div id="error-message" style="color: red; display: none; text-align: center; margin-bottom: 1rem;"></div>
+        <div class="grid-3" id="properties-grid">
+            <p style="text-align: center; width: 100%; grid-column: 1 / -1;">Loading properties...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/api/get_properties')
+                .then(response => response.json())
+                .then(result => {
+                    const grid = document.getElementById('properties-grid');
+                    grid.innerHTML = '';
+                    
+                    if (result.status === 'success') {
+                        if (result.data.length === 0) {
+                            grid.innerHTML = '<p style="text-align: center; grid-column: 1 / -1;">No properties available at the moment.</p>';
+                            return;
+                        }
+                        
+                        // Show up to 3 featured properties
+                        const featured = result.data.filter(p => p.is_featured === 1).slice(0, 3);
+                        const toShow = featured.length > 0 ? featured : result.data.slice(0, 3);
+
+                        toShow.forEach(prop => {
+                            const imageUrl = prop.image_url ? prop.image_url : 'https://via.placeholder.com/800x600?text=No+Image';
+                            const bedrooms = prop.bedrooms || 0;
+                            const bathrooms = prop.bathrooms || 0;
+                            const sqft = prop.square_footage || 0;
+                            
+                            const cardHTML = `
+                                <div class="card">
+                                    <img src="${imageUrl}" alt="Property Image">
+                                    <div class="card-body">
+                                        <h3 class="card-title">${prop.property_name}</h3>
+                                        <div class="card-price">$${parseFloat(prop.price).toLocaleString()}</div>
+                                        <div class="card-details">
+                                            <span>${bedrooms} Beds</span> &bull; 
+                                            <span>${bathrooms} Baths</span> &bull; 
+                                            <span>${sqft} sqft</span>
+                                        </div>
+                                        <a href="property.html?id=${prop.property_id}" class="btn-primary" style="display: block; text-align: center;">View Details</a>
+                                    </div>
+                                </div>
+                            `;
+                            grid.innerHTML += cardHTML;
+                        });
+                    } else {
+                        document.getElementById('error-message').style.display = 'block';
+                        document.getElementById('error-message').innerText = "Error loading properties: " + result.message;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching properties:', error);
+                    document.getElementById('properties-grid').innerHTML = '<p style="text-align: center; color: red; grid-column: 1 / -1;">Failed to connect to the server.</p>';
+                });
+        });
+    </script>
+</body>
+</html>

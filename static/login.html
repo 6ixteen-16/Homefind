@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Homefinder</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body style="display: flex; justify-content: center; align-items: center; height: 100vh; background: var(--background);">
+
+    <div style="background: var(--white); padding: 2rem; border-radius: 8px; width: 400px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h2 style="text-align: center; margin-bottom: 1.5rem; color: var(--primary-color);">Homefind Secure Login</h2>
+        
+        <div id="message-box" style="display: none; padding: 0.5rem; margin-bottom: 1rem; border-radius: 4px; text-align: center;"></div>
+
+        <form id="login-form" style="display: flex; flex-direction: column; gap: 1rem;">
+            
+            <div id="standard-login">
+                <input type="email" id="email" placeholder="Email Address" required style="padding: 0.5rem; width: 100%; margin-bottom: 1rem;">
+                <input type="password" id="password" placeholder="Password" required style="padding: 0.5rem; width: 100%;">
+            </div>
+
+            <div id="otp-login" style="display: none;">
+                <p style="text-align: center; font-size: 0.9rem;">Please enter the OTP sent to your device.</p>
+                <input type="text" id="otp" placeholder="Enter 6-digit OTP" style="padding: 0.5rem; width: 100%; text-align: center; letter-spacing: 2px;">
+            </div>
+            
+            <button type="submit" id="submit-btn" class="btn-primary">Login</button>
+        </form>
+        
+        <p style="text-align: center; margin-top: 1rem; font-size: 0.8rem; color: var(--text-muted);">
+            Protected by Role-Based Access Control & OTP Integrity.
+        </p>
+    </div>
+
+    <script>
+        let isOtpMode = false;
+        let currentSessionToken = null;
+
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const msgBox = document.getElementById('message-box');
+            msgBox.style.display = 'none';
+
+            // Gather data
+            const data = {};
+            if (isOtpMode) {
+                data.otp = document.getElementById('otp').value;
+                data.session_token = currentSessionToken;
+            } else {
+                data.email = document.getElementById('email').value;
+                data.password = document.getElementById('password').value;
+            }
+
+            // Send to PHP backend API
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    if (result.token) {
+                        localStorage.setItem('auth_token', result.token);
+                    }
+                    window.location.href = result.redirect;
+                } else if (result.status === 'error') {
+                    // Show error
+                    msgBox.style.display = 'block';
+                    msgBox.style.background = '#fee2e2';
+                    msgBox.style.color = '#dc2626';
+                    msgBox.innerText = result.message;
+                } else if (result.status === 'info' && result.otp_required) {
+                    // Switch to OTP mode
+                    isOtpMode = true;
+                    currentSessionToken = result.session_token;
+                    document.getElementById('standard-login').style.display = 'none';
+                    document.getElementById('otp-login').style.display = 'block';
+                    document.getElementById('submit-btn').innerText = 'Verify OTP';
+                    document.getElementById('otp').required = true;
+                    
+                    msgBox.style.display = 'block';
+                    msgBox.style.background = '#dbeafe';
+                    msgBox.style.color = '#1d4ed8';
+                    msgBox.innerText = result.message;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                msgBox.style.display = 'block';
+                msgBox.style.background = '#fee2e2';
+                msgBox.style.color = '#dc2626';
+                msgBox.innerText = 'Failed to connect to the server.';
+            });
+        });
+    </script>
+</body>
+</html>
