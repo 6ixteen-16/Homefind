@@ -40,6 +40,9 @@ Homefind is a property listing and property-management system built with FastAPI
 |   |-- login.html            Login page
 |   |-- dashboard.html        Admin dashboard
 |   |-- admin_agents.html     Admin agent management
+|   |-- owner_portal.html     Owner portfolio workspace
+|   |-- agent_portal.html     Agent sales workspace
+|   |-- tenant_portal.html    Tenant discovery and inquiry workspace
 |   |-- admin_listings.html   Admin listing management
 |   |-- admin_inquiries.html  Admin inquiry management
 |   |-- uploads/              Property images
@@ -80,6 +83,9 @@ Sessions disappear when the server restarts. This is suitable for local developm
 | GET/PUT/DELETE | `/api/admin/listings/{property_id}` | Read, update, or delete a property. |
 | GET | `/api/admin/inquiries` | List submitted inquiries. |
 | PUT | `/api/admin/inquiries/{inquiry_id}/status` | Change inquiry status. |
+| GET | `/api/owner/overview` | Owner-scoped portfolio and inquiry data. |
+| GET | `/api/agent/overview` | Agent-scoped listings and lead data. |
+| GET | `/api/tenant/overview` | Tenant profile, published homes, and own inquiries. |
 
 Interactive API documentation is available at `http://127.0.0.1:8000/docs` after startup.
 
@@ -337,11 +343,11 @@ These browser checks improve navigation, but they are not the security boundary.
 
 ### Current RBAC scope
 
-The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. Admin routes require `Admin`. The verification upload route permits `Owner` and `Agent`; owners must provide a land-title PDF while agents may omit it. Tenant-specific business routes have not been added yet.
+The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. Admin routes require `Admin`; Owner, Agent, and Tenant portals use separate role dependencies and scoped queries. The verification upload route permits `Owner` and `Agent`; owners must provide a land-title PDF while agents may omit it.
 
 ## Identity verification documents
 
-Owners and agents authenticate through `/api/login`, then are directed to `verification.html`. The page posts multipart form data to `/api/verification/documents` with:
+Owners and agents authenticate through `/api/login`, then are directed to their role portal. Each portal includes the verification form and posts multipart form data to `/api/verification/documents` with:
 
 - `face_photo`: required JPEG, PNG, or WebP face photo.
 - `national_id_front`: required national-ID front image or PDF.
@@ -797,4 +803,4 @@ Remaining production requirements:
 - Replace in-memory sessions with Redis or a database-backed store before using multiple workers.
 - Add HTTPS, secure cookie/token handling, rate limits, malware scanning, and audit review for identity files.
 - Add formal database migrations instead of relying on manually copied SQL.
-- Add tenant-specific routes and policies when tenant workflows are implemented.
+- Extend tenant-specific permissions as the tenant workflow grows.
