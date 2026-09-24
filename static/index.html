@@ -66,12 +66,14 @@
                                     <img src="${imageUrl}" alt="Property Image">
                                     <div class="card-body">
                                         <h3 class="card-title">${prop.property_name}</h3>
-                                        <div class="card-price">$${parseFloat(prop.price).toLocaleString()}</div>
+                                        <div class="card-price">${prop.currency || 'USD'} ${parseFloat(prop.price).toLocaleString()}</div>
+                                        <div style="color:var(--text-muted); margin:.35rem 0;">${prop.city || ''}${prop.country ? ', ' + prop.country : ''}</div>
                                         <div class="card-details">
                                             <span>${bedrooms} Beds</span> &bull; 
                                             <span>${bathrooms} Baths</span> &bull; 
                                             <span>${sqft} sqft</span>
                                         </div>
+                                        <div style="color:var(--text-muted); margin:.35rem 0;">${prop.amenities || 'Flexible living spaces'}</div>
                                         <a href="property.html?id=${prop.property_id}" class="btn-primary" style="display: block; text-align: center;">View Details</a>
                                     </div>
                                 </div>

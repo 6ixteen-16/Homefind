@@ -10,6 +10,12 @@
         .property-images { display: flex; gap: 1rem; overflow-x: auto; margin-bottom: 2rem; }
         .property-images img { width: 300px; height: 200px; object-fit: cover; border-radius: 8px; }
         .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .property-meta { display:flex; flex-wrap:wrap; gap:.6rem; margin-top:1rem; color:var(--text-muted); }
+        .meta-pill { background:#eef4f1; color:#315f54; padding:.35rem .65rem; border-radius:999px; font-size:.85rem; }
+        .amenities { margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border-color); }
+        .map-link { color:var(--primary-color); font-weight:700; }
+        .unit-list { margin-top:1rem; display:grid; gap:.5rem; }
+        .unit-row { display:flex; justify-content:space-between; gap:1rem; padding:.65rem; background:#f6f8fa; border-radius:6px; }
     </style>
 </head>
 <body>
@@ -35,6 +41,7 @@
                 <h1 id="prop-name">Property Name</h1>
                 <h2 style="color: var(--primary-color);" id="prop-price">$0.00</h2>
                 <p style="color: var(--text-muted);" id="prop-address">Address here</p>
+                <div class="property-meta" id="prop-meta"></div>
             </div>
 
             <div class="property-images" id="prop-images">
@@ -54,6 +61,8 @@
                         <li><strong>Status:</strong> <span id="prop-status">N/A</span></li>
                         <li><strong>Owner:</strong> <span id="prop-owner">N/A</span></li>
                     </ul>
+                    <div class="amenities"><h3>Amenities</h3><p id="prop-amenities" style="margin-top:.5rem; color:var(--text-muted);">None listed</p></div>
+                    <div class="amenities"><h3>Units</h3><div id="prop-units" class="unit-list"></div></div>
                 </div>
                 
                 <div style="background: var(--white); padding: 2rem; border-radius: 8px;">
@@ -97,8 +106,10 @@
                         const p = result.data;
                         document.title = `${p.property_name} - Homefinder`;
                         document.getElementById('prop-name').innerText = p.property_name;
-                        document.getElementById('prop-price').innerText = `$${parseFloat(p.price).toLocaleString()}`;
+                        document.getElementById('prop-price').innerText = `${p.currency || 'USD'} ${parseFloat(p.price).toLocaleString()}`;
                         document.getElementById('prop-address').innerText = `${p.street || ''}, ${p.city || ''}, ${p.country || ''}`;
+                        const meta = document.getElementById('prop-meta');
+                        meta.innerHTML = `<span class="meta-pill">${p.property_status || 'Unlisted'}</span><span class="meta-pill">${p.views || 0} views</span>${p.location ? `<span class="meta-pill">${p.location}</span>` : ''}${p.latitude && p.longitude ? `<a class="meta-pill map-link" href="https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}" target="_blank" rel="noopener">Open map</a>` : ''}`;
                         document.getElementById('prop-desc').innerText = p.description;
                         
                         document.getElementById('prop-beds').innerText = p.bedrooms || 'N/A';
@@ -106,6 +117,8 @@
                         document.getElementById('prop-sqft').innerText = p.square_footage || 'N/A';
                         document.getElementById('prop-status').innerText = p.availability_status || p.property_status;
                         document.getElementById('prop-owner').innerText = p.owner_name;
+                        document.getElementById('prop-amenities').innerText = p.amenities || 'None listed';
+                        document.getElementById('prop-units').innerHTML = (p.units || []).length ? p.units.map(unit => `<div class="unit-row"><span>${unit.unit_number} · ${unit.bedrooms || 0} beds · ${unit.bathrooms || 0} baths</span><strong>${unit.availability_status || 'Available'}</strong></div>`).join('') : '<p style="color:var(--text-muted);">Unit details unavailable.</p>';
                         
                         document.getElementById('form-prop-id').value = p.property_id;
                         

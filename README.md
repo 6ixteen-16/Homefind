@@ -32,6 +32,8 @@ Homefind is a property listing and property-management system built with FastAPI
 |-- requirements.txt         Python dependencies
 |-- run_seed.py              Creates local test users and profiles
 |-- seed.sql                 Example property and user data inserts
+|-- schema.sql               Canonical database schema
+|-- schema_migration.sql     Safe upgrade for existing installations
 |-- test_users.sql           Additional test-user inserts
 |-- static/
 |   |-- index.html            Public home page
@@ -416,7 +418,7 @@ pip install -r requirements.txt
 
 ## Database setup from scratch
 
-`seed.sql` contains data inserts only. It does not create the database or tables, so create the schema before importing it.
+`schema.sql` is the canonical schema for a fresh installation. Existing installations should run `schema_migration.sql` first. `seed.sql` contains data inserts only, so do not load it before the tables exist.
 
 ### 1. Create the database
 
@@ -449,6 +451,20 @@ FLUSH PRIVILEGES;
 Put the same values in a local `.env` copied from `.env.example`. The API and `run_seed.py` load that file automatically. Keep `.env` private and never commit it.
 
 ### 3. Create the tables
+
+For a fresh database, load the canonical schema:
+
+```bash
+mysql -u homefind_app -p homefinder_db < schema.sql
+```
+
+For an existing Homefind database, apply the compatibility migration instead:
+
+```bash
+mysql -u homefind_app -p homefinder_db < schema_migration.sql
+```
+
+The migration preserves existing records, normalizes legacy inquiry statuses, aligns defaults and ENUM values, and adds the attachment's stricter viewing/agreement/amenity contracts.
 
 Run this DDL in `homefinder_db`:
 
