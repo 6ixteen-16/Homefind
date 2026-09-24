@@ -5,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Create public image and private verification directories if they don't exist.
 os.makedirs("static/uploads", exist_ok=True)
@@ -63,6 +66,15 @@ def get_admin_user(user: dict = Depends(require_roles("Admin"))):
 def get_verification_user(user: dict = Depends(require_roles("Owner", "Agent"))):
     return user
 
+def get_owner_user(user: dict = Depends(require_roles("Owner"))):
+    return user
+
+def get_agent_user(user: dict = Depends(require_roles("Agent"))):
+    return user
+
+def get_tenant_user(user: dict = Depends(require_roles("Tenant"))):
+    return user
+
 
 # Configuration
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
@@ -71,8 +83,26 @@ DB_USER = os.getenv("DB_USER", "root")
 DB_PASS = os.getenv("DB_PASS", "")
 DB_NAME = os.getenv("DB_NAME", "homefinder_db")
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+APP_ENV = os.getenv("APP_ENV", "development").lower()
 
-app = FastAPI(docs_url=None if os.getenv("APP_ENV") == "production" else "/docs")
+app = FastAPI(
+    docs_url=None if APP_ENV == "production" else "/docs",
+    redoc_url=None if APP_ENV == "production" else "/redoc",
+    openapi_url=None if APP_ENV == "production" else "/openapi.json",
+)
+if APP_ENV == "production":
+    @app.get("/docs", include_in_schema=False)
+    def disabled_docs():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    @app.get("/redoc", include_in_schema=False)
+    def disabled_redoc():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    @app.get("/openapi.json", include_in_schema=False)
+    def disabled_openapi():
+        raise HTTPException(status_code=404, detail="Not found")
+
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -111,19 +141,22 @@ def get_db_connection():
 
 def log_audit_action(user_id, action, table_name, record_id, old_value, new_value, ip_address):
     conn = get_db_connection()
-    if conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                INSERT INTO audit_logs (log_id, user_id, action, table_name, record_id, old_value, new_value, ip_address)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (str(uuid.uuid4()), user_id, action, table_name, record_id, old_value, new_value, ip_address))
-            conn.commit()
-        except Exception as e:
-            print(f"Audit log failed: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO audit_logs (log_id, user_id, action, table_name, record_id, old_value, new_value, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (str(uuid.uuid4()), user_id, action, table_name, record_id, old_value, new_value, ip_address))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Audit log failed: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
 
 # Models
 class LoginRequest(BaseModel):
@@ -137,7 +170,7 @@ class LoginRequest(BaseModel):
 def get_properties():
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     
     cursor = conn.cursor()
     cursor.execute("""
@@ -158,7 +191,7 @@ def get_properties():
 def get_property(id: str, request: Request):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     
     cursor = conn.cursor()
     cursor.execute("""
@@ -199,7 +232,8 @@ def login(req: LoginRequest, request: Request):
             # Login success - convert to authenticated session
             del session['expected_otp']
             session['authenticated'] = True
-            return {"status": "success", "redirect": "verification.html" if session['role'] in ('Owner', 'Agent') else "dashboard.html", "token": req.session_token, "role": session['role']}
+            destinations = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
+            return {"status": "success", "redirect": destinations.get(session['role'], 'login.html'), "token": req.session_token, "role": session['role']}
         else:
             return {"status": "error", "message": "Invalid OTP. Please try again.", "otp_required": True}
 
@@ -208,7 +242,7 @@ def login(req: LoginRequest, request: Request):
 
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
 
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE email = %s", (req.email,))
@@ -268,7 +302,8 @@ def login(req: LoginRequest, request: Request):
             log_audit_action(user['user_id'], 'LOGIN_SUCCESS', 'users', user['user_id'], None, None, request.client.host)
             cursor.close()
             conn.close()
-            return {"status": "success", "redirect": "verification.html" if user['role'] in ('Owner', 'Agent') else "dashboard.html", "token": token, "role": user['role']}
+            destinations = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
+            return {"status": "success", "redirect": destinations.get(user['role'], 'login.html'), "token": token, "role": user['role']}
     else:
         attempts = user['failed_login_attempts'] + 1
         locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)) if attempts >= 5 else None
@@ -286,7 +321,7 @@ def login(req: LoginRequest, request: Request):
 def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
 
     cursor = conn.cursor()
     try:
@@ -374,7 +409,8 @@ async def contact(request: Request):
         return {"status": "error", "message": "Name, email, and message are required."}
 
     # Log the contact message in the audit log
-    log_audit_action(None, 'CONTACT_FORM', 'inquiry', None, None, f"From: {name} <{email}> | Subject: {subject}", request.client.host)
+    if not log_audit_action(None, 'CONTACT_FORM', 'inquiry', None, None, f"From: {name} <{email}> | Subject: {subject}", request.client.host):
+        raise HTTPException(status_code=503, detail="Could not save contact message")
 
     return {"status": "success", "message": "Message received. We will get back to you soon."}
 
@@ -391,7 +427,7 @@ async def submit_inquiry(request: Request):
 
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
 
     cursor = conn.cursor()
     try:
@@ -495,11 +531,130 @@ def get_verification_documents(user_id: str, admin: dict = Depends(get_admin_use
         cursor.close()
         conn.close()
 
+@app.get("/api/owner/overview")
+def get_owner_overview(owner: dict = Depends(get_owner_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT owner_id, name, email FROM owner WHERE user_id = %s", (owner['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Owner profile not found")
+        cursor.execute("""
+            SELECT property_id, property_name, city, property_status, price, views, created_at
+            FROM property WHERE owner_id = %s ORDER BY created_at DESC
+        """, (profile['owner_id'],))
+        properties = cursor.fetchall()
+        for property_row in properties:
+            if property_row.get('created_at'):
+                property_row['created_at'] = str(property_row['created_at'])
+        cursor.execute("""
+            SELECT i.inquiry_id, i.name, i.email, i.message, i.status, i.created_at, p.property_name
+            FROM inquiry i JOIN property p ON p.property_id = i.property_id
+            WHERE p.owner_id = %s ORDER BY i.created_at DESC LIMIT 20
+        """, (profile['owner_id'],))
+        inquiries = cursor.fetchall()
+        for inquiry in inquiries:
+            if inquiry.get('created_at'):
+                inquiry['created_at'] = str(inquiry['created_at'])
+        cursor.execute("SELECT document_type, uploaded_at, verified_at FROM identity_documents WHERE user_id = %s ORDER BY uploaded_at DESC", (owner['user_id'],))
+        documents = cursor.fetchall()
+        for document in documents:
+            if document.get('uploaded_at'):
+                document['uploaded_at'] = str(document['uploaded_at'])
+            if document.get('verified_at'):
+                document['verified_at'] = str(document['verified_at'])
+        return {"status": "success", "data": {"profile": profile, "properties": properties, "inquiries": inquiries, "documents": documents}}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/agent/overview")
+def get_agent_overview(agent: dict = Depends(get_agent_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT agent_id, name, email, phone_number FROM agent WHERE user_id = %s", (agent['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Agent profile not found")
+        cursor.execute("""
+            SELECT p.property_id, p.property_name, p.city, p.property_status, p.price, p.views, p.created_at
+            FROM listing l
+            JOIN advertised_as aa ON aa.listing_id = l.listing_id
+            JOIN property p ON p.property_id = aa.property_id
+            WHERE l.agent_id = %s ORDER BY p.created_at DESC
+        """, (profile['agent_id'],))
+        listings = cursor.fetchall()
+        for listing in listings:
+            if listing.get('created_at'):
+                listing['created_at'] = str(listing['created_at'])
+        cursor.execute("""
+            SELECT i.inquiry_id, i.name, i.email, i.message, i.status, i.created_at, p.property_name
+            FROM inquiry i JOIN property p ON p.property_id = i.property_id
+            JOIN advertised_as aa ON aa.property_id = p.property_id
+            JOIN listing l ON l.listing_id = aa.listing_id
+            WHERE l.agent_id = %s ORDER BY i.created_at DESC LIMIT 20
+        """, (profile['agent_id'],))
+        inquiries = cursor.fetchall()
+        for inquiry in inquiries:
+            if inquiry.get('created_at'):
+                inquiry['created_at'] = str(inquiry['created_at'])
+        cursor.execute("SELECT document_type, uploaded_at, verified_at FROM identity_documents WHERE user_id = %s ORDER BY uploaded_at DESC", (agent['user_id'],))
+        documents = cursor.fetchall()
+        for document in documents:
+            if document.get('uploaded_at'):
+                document['uploaded_at'] = str(document['uploaded_at'])
+            if document.get('verified_at'):
+                document['verified_at'] = str(document['verified_at'])
+        return {"status": "success", "data": {"profile": profile, "listings": listings, "inquiries": inquiries, "documents": documents}}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/tenant/overview")
+def get_tenant_overview(tenant: dict = Depends(get_tenant_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT tenant_id, name, email, date_of_birth, address FROM tenant WHERE user_id = %s", (tenant['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Tenant profile not found")
+        cursor.execute("""
+            SELECT p.property_id, p.property_name, p.description, p.city, p.country, p.price,
+                   p.property_status, p.is_featured, p.views, u.bedrooms, u.bathrooms,
+                   u.square_footage, u.monthly_rent, m.url AS image_url
+            FROM property p
+            LEFT JOIN unit u ON u.property_id = p.property_id
+            LEFT JOIN property_media m ON m.property_id = p.property_id AND m.is_featured = 1
+            WHERE p.property_status = 'Published' ORDER BY p.is_featured DESC, p.created_at DESC LIMIT 24
+        """)
+        properties = cursor.fetchall()
+        cursor.execute("""
+            SELECT inquiry_id, property_id, name, email, message, status, created_at
+            FROM inquiry WHERE email = %s ORDER BY created_at DESC LIMIT 20
+        """, (profile['email'],))
+        inquiries = cursor.fetchall()
+        for inquiry in inquiries:
+            if inquiry.get('created_at'):
+                inquiry['created_at'] = str(inquiry['created_at'])
+        return {"status": "success", "data": {"profile": profile, "properties": properties, "inquiries": inquiries}}
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.get("/api/admin/agents")
 def get_agents(admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT agent_id, user_id, name, phone_number, email FROM agent ORDER BY name ASC")
@@ -515,7 +670,7 @@ def get_agents(admin: dict = Depends(get_admin_user)):
 def create_agent(req: AgentCreate, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT * FROM users WHERE email = %s", (req.email,))
@@ -543,7 +698,7 @@ def create_agent(req: AgentCreate, admin: dict = Depends(get_admin_user)):
 def update_agent(agent_id: str, req: AgentUpdate, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE agent SET name = %s, phone_number = %s WHERE agent_id = %s", (req.name, req.phone_number, agent_id))
@@ -561,7 +716,7 @@ def update_agent(agent_id: str, req: AgentUpdate, admin: dict = Depends(get_admi
 def delete_agent(agent_id: str, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
-        return {"status": "error", "message": "Database connection failed"}
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT user_id FROM agent WHERE agent_id = %s", (agent_id,))
@@ -584,7 +739,8 @@ def delete_agent(agent_id: str, admin: dict = Depends(get_admin_user)):
 @app.get("/api/admin/listings")
 def get_admin_listings(admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
-    if not conn: return {"status": "error", "message": "DB failed"}
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     cursor.execute("""
         SELECT p.property_id, p.property_name, p.price, p.property_status, p.created_at, p.views
@@ -618,6 +774,8 @@ async def create_admin_listing(
     admin: dict = Depends(get_admin_user)
 ):
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         # Get a default owner
@@ -672,6 +830,8 @@ async def create_admin_listing(
 @app.get("/api/admin/listings/{property_id}")
 def get_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("""
@@ -713,6 +873,8 @@ async def update_admin_listing(
     admin: dict = Depends(get_admin_user)
 ):
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("""
@@ -763,6 +925,8 @@ async def update_admin_listing(
 @app.delete("/api/admin/listings/{property_id}")
 def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM property WHERE property_id = %s", (property_id,))
@@ -779,6 +943,8 @@ def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)
 @app.get("/api/admin/inquiries")
 def get_admin_inquiries(admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("""
@@ -802,6 +968,8 @@ async def update_inquiry_status(inquiry_id: str, request: Request, admin: dict =
     data = await request.json()
     new_status = data.get('status', 'READ')
     conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE inquiry SET status=%s WHERE inquiry_id=%s", (new_status, inquiry_id))

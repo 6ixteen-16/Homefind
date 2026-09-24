@@ -40,6 +40,9 @@ Homefind is a property listing and property-management system built with FastAPI
 |   |-- login.html            Login page
 |   |-- dashboard.html        Admin dashboard
 |   |-- admin_agents.html     Admin agent management
+|   |-- owner_portal.html     Owner portfolio workspace
+|   |-- agent_portal.html     Agent sales workspace
+|   |-- tenant_portal.html    Tenant discovery and inquiry workspace
 |   |-- admin_listings.html   Admin listing management
 |   |-- admin_inquiries.html  Admin inquiry management
 |   |-- uploads/              Property images
@@ -80,6 +83,9 @@ Sessions disappear when the server restarts. This is suitable for local developm
 | GET/PUT/DELETE | `/api/admin/listings/{property_id}` | Read, update, or delete a property. |
 | GET | `/api/admin/inquiries` | List submitted inquiries. |
 | PUT | `/api/admin/inquiries/{inquiry_id}/status` | Change inquiry status. |
+| GET | `/api/owner/overview` | Owner-scoped portfolio and inquiry data. |
+| GET | `/api/agent/overview` | Agent-scoped listings and lead data. |
+| GET | `/api/tenant/overview` | Tenant profile, published homes, and own inquiries. |
 
 Interactive API documentation is available at `http://127.0.0.1:8000/docs` after startup.
 
@@ -337,11 +343,11 @@ These browser checks improve navigation, but they are not the security boundary.
 
 ### Current RBAC scope
 
-The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. Admin routes require `Admin`. The verification upload route permits `Owner` and `Agent`; owners must provide a land-title PDF while agents may omit it. Tenant-specific business routes have not been added yet.
+The database has `Admin`, `Owner`, `Agent`, and `Tenant` roles, and the login session preserves whichever role is stored in `users.role`. Admin routes require `Admin`; Owner, Agent, and Tenant portals use separate role dependencies and scoped queries. The verification upload route permits `Owner` and `Agent`; owners must provide a land-title PDF while agents may omit it.
 
 ## Identity verification documents
 
-Owners and agents authenticate through `/api/login`, then are directed to `verification.html`. The page posts multipart form data to `/api/verification/documents` with:
+Owners and agents authenticate through `/api/login`, then are directed to their role portal. Each portal includes the verification form and posts multipart form data to `/api/verification/documents` with:
 
 - `face_photo`: required JPEG, PNG, or WebP face photo.
 - `national_id_front`: required national-ID front image or PDF.
@@ -427,7 +433,22 @@ CREATE DATABASE IF NOT EXISTS homefinder_db
 USE homefinder_db;
 ```
 
-### 2. Create the tables
+### 2. Create a dedicated application account
+
+Do not run the API as MySQL `root`. While still connected as a local MySQL administrator, create a dedicated account and replace the placeholder with a long random password:
+
+```sql
+CREATE USER IF NOT EXISTS 'homefind_app'@'127.0.0.1'
+    IDENTIFIED BY 'replace-with-a-long-random-password';
+ALTER USER 'homefind_app'@'127.0.0.1'
+    IDENTIFIED BY 'replace-with-a-long-random-password';
+GRANT ALL PRIVILEGES ON homefinder_db.* TO 'homefind_app'@'127.0.0.1';
+FLUSH PRIVILEGES;
+```
+
+Put the same values in a local `.env` copied from `.env.example`. The API and `run_seed.py` load that file automatically. Keep `.env` private and never commit it.
+
+### 3. Create the tables
 
 Run this DDL in `homefinder_db`:
 
@@ -606,7 +627,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 ) ENGINE=InnoDB;
 ```
 
-### 3. Import sample data
+### 4. Import sample data
 
 From the repository root:
 
@@ -624,7 +645,7 @@ Get-Content .\seed.sql | mysql -u root -p homefinder_db
 
 The seed includes sample owners, properties, units, media, and related records. Its `INSERT IGNORE` statements make rerunning it safe for existing keys.
 
-### 4. Create demo accounts
+### 5. Create demo accounts
 
 `run_seed.py` inserts test users and their profiles. Before running it, update the database constants in both `main.py` and `run_seed.py` if your MySQL credentials differ from the local defaults.
 
@@ -654,7 +675,7 @@ DB_PASS = "<your-local-mysql-password>"
 DB_NAME = "homefinder_db"
 ```
 
-`run_seed.py` reads the same environment variables. Copy `.env.example` to `.env` and set real values in your process manager or deployment secret store. The application does not load `.env` automatically; on Windows PowerShell use `$env:DB_PASS = '...'`, on macOS use `export DB_PASS='...'`, or inject the variables through Docker. Never commit `.env`.
+`main.py` and `run_seed.py` automatically load a local `.env` file when present. Copy `.env.example` to `.env` and set real values in your process manager or deployment secret store. On Windows PowerShell you may also use `$env:DB_PASS = '...'`; on macOS use `export DB_PASS='...'`; Docker can use `--env-file .env`. Never commit `.env`.
 
 ## Run the application
 
@@ -782,4 +803,4 @@ Remaining production requirements:
 - Replace in-memory sessions with Redis or a database-backed store before using multiple workers.
 - Add HTTPS, secure cookie/token handling, rate limits, malware scanning, and audit review for identity files.
 - Add formal database migrations instead of relying on manually copied SQL.
-- Add tenant-specific routes and policies when tenant workflows are implemented.
+- Extend tenant-specific permissions as the tenant workflow grows.
