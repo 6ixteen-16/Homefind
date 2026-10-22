@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Owner Workspace | Homefind</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .portal { min-height: 100vh; background: #eef4f1; }
+        .portal-nav { background: #173b35; color: #fff; padding: 1rem clamp(1rem, 4vw, 4rem); display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+        .portal-nav a { color:#d8eee5; text-decoration:none; font-weight:600; }
+        .portal-brand { font-size:1.3rem; font-weight:800; letter-spacing:.02em; }
+        .portal-main { max-width: 1320px; margin:auto; padding: clamp(1.25rem, 4vw, 3rem); }
+        .portal-intro { display:flex; justify-content:space-between; align-items:end; gap:2rem; margin-bottom:2rem; }
+        .portal-intro h1 { font-size:clamp(1.8rem, 4vw, 3.2rem); color:#173b35; line-height:1.05; }
+        .portal-intro p { color:#54736b; margin-top:.6rem; }
+        .eyebrow { color:#c66b3d; text-transform:uppercase; letter-spacing:.14em; font-size:.75rem; font-weight:800; }
+        .portal-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:1rem; margin-bottom:1.5rem; }
+        .metric, .panel { background:#fff; border:1px solid #d8e5df; border-radius:14px; box-shadow:0 8px 20px rgba(23,59,53,.06); }
+        .metric { padding:1.2rem; } .metric strong { display:block; font-size:2rem; color:#173b35; } .metric span { color:#6b817b; font-size:.9rem; }
+        .content-grid { display:grid; grid-template-columns: 1.35fr .9fr; gap:1.5rem; }
+        .panel { padding:1.35rem; margin-bottom:1.5rem; } .panel h2 { color:#173b35; font-size:1.1rem; margin-bottom:1rem; }
+        .table-wrap { overflow-x:auto; } table { width:100%; border-collapse:collapse; min-width:520px; } th,td { text-align:left; padding:.8rem .5rem; border-bottom:1px solid #e8efeb; } th { color:#6b817b; font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; } td { color:#294d45; }
+        .status { display:inline-flex; padding:.25rem .55rem; border-radius:999px; background:#e2f2e9; color:#24704d; font-size:.75rem; font-weight:700; }
+        .empty { color:#78908a; padding:1rem 0; } .profile { display:grid; gap:.65rem; } .profile div { display:flex; justify-content:space-between; gap:1rem; border-bottom:1px solid #edf2ef; padding:.55rem 0; } .profile dt { color:#78908a; } .profile dd { color:#294d45; font-weight:700; text-align:right; }
+        .verify { background:#fff8f0; border-color:#efd8bd; } .verify p { color:#735a43; font-size:.9rem; margin-bottom:1rem; } .verify label { display:block; color:#513c2d; font-weight:700; font-size:.85rem; margin:.8rem 0; } .verify input { display:block; width:100%; margin-top:.35rem; }
+        button { border:0; border-radius:8px; background:#c66b3d; color:#fff; font-weight:800; padding:.7rem 1rem; cursor:pointer; } button:hover { background:#a9522e; } .message { margin-top:.8rem; color:#24704d; font-weight:700; }
+        @media (max-width:850px) { .portal-grid,.content-grid { grid-template-columns:1fr 1fr; } .content-grid { display:block; } }
+        @media (max-width:560px) { .portal-grid { grid-template-columns:1fr 1fr; } .portal-intro { display:block; } .portal-nav { align-items:flex-start; } }
+    </style>
+</head>
+<body class="portal">
+    <nav class="portal-nav"><a class="portal-brand" href="/">HOMEFIND / OWNER</a><div><a href="/properties.html">Browse</a> <button id="logout" type="button">Log out</button></div></nav>
+    <main class="portal-main">
+        <section class="portal-intro"><div><div class="eyebrow">Ownership desk</div><h1 id="welcome">Your property portfolio</h1><p>Track listings, enquiries, and verification status from one workspace.</p></div></section>
+        <section class="portal-grid"><div class="metric"><strong id="property-count">-</strong><span>Properties</span></div><div class="metric"><strong id="published-count">-</strong><span>Published</span></div><div class="metric"><strong id="view-count">-</strong><span>Total views</span></div><div class="metric"><strong id="inquiry-count">-</strong><span>Recent enquiries</span></div></section>
+        <div class="content-grid"><div><section class="panel"><h2>Portfolio</h2><div id="properties" class="table-wrap"></div></section><section class="panel"><h2>Recent enquiries</h2><div id="inquiries" class="table-wrap"></div></section></div><aside><section class="panel"><h2>Account</h2><dl id="profile" class="profile"></dl></section><section class="panel verify"><h2>Verification vault</h2><p>Owners must submit a face photo, both sides of national ID, and a land-title PDF.</p><form id="verification-form"><label>Face photo<input name="face_photo" type="file" accept="image/jpeg,image/png,image/webp" required></label><label>ID front<input name="national_id_front" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><label>ID back<input name="national_id_back" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><label>Land title PDF<input name="land_title" type="file" accept="application/pdf" required></label><button type="submit">Submit for review</button></form><div id="verify-message" class="message"></div></section></aside></div>
+    </main>
+    <script>
+        const token = localStorage.getItem('auth_token');
+        if (!token) location.href = 'login.html';
+        const headers = { Authorization: 'Bearer ' + token };
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        async function load() { const response = await fetch('/api/owner/overview', { headers }); if (response.status === 401 || response.status === 403) { localStorage.removeItem('auth_token'); location.href='login.html'; return; } const result=await response.json(); if(result.status!=='success'){ throw new Error(result.detail || result.message); } const data=result.data; document.getElementById('welcome').textContent='Welcome, '+data.profile.name; document.getElementById('property-count').textContent=data.properties.length; document.getElementById('published-count').textContent=data.properties.filter(p=>p.property_status==='Published').length; document.getElementById('view-count').textContent=data.properties.reduce((sum,p)=>sum+(p.views||0),0); document.getElementById('inquiry-count').textContent=data.inquiries.length; document.getElementById('profile').innerHTML=`<div><dt>Name</dt><dd>${esc(data.profile.name)}</dd></div><div><dt>Email</dt><dd>${esc(data.profile.email)}</dd></div><div><dt>Documents</dt><dd>${data.documents.length} uploaded</dd></div>`; document.getElementById('properties').innerHTML=data.properties.length?`<table><thead><tr><th>Property</th><th>Location</th><th>Status</th><th>Views</th></tr></thead><tbody>${data.properties.map(p=>`<tr><td>${esc(p.property_name)}</td><td>${esc(p.city)}</td><td><span class="status">${esc(p.property_status)}</span></td><td>${p.views||0}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">No properties are assigned to this owner yet.</p>'; document.getElementById('inquiries').innerHTML=data.inquiries.length?`<table><thead><tr><th>Property</th><th>From</th><th>Status</th></tr></thead><tbody>${data.inquiries.map(i=>`<tr><td>${esc(i.property_name)}</td><td>${esc(i.email)}</td><td><span class="status">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>`:'<p class="empty">No enquiries yet.</p>'; }
+        document.getElementById('verification-form').addEventListener('submit', async event => { event.preventDefault(); const response=await fetch('/api/verification/documents',{method:'POST',headers,body:new FormData(event.target)}); const result=await response.json(); document.getElementById('verify-message').textContent=result.status==='success'?'Documents submitted for review.':(result.detail||result.message||'Upload failed.'); });
+        document.getElementById('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST',headers});localStorage.removeItem('auth_token');location.href='login.html';};
+        load().catch(error=>document.getElementById('properties').innerHTML=`<p class="empty">${esc(error.message)}</p>`);
+    </script>
+</body>
+</html>
