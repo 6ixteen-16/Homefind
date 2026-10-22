@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Identity Verification | Homefind</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="container" style="max-width: 720px; margin: 3rem auto;">
+        <h1>Identity verification</h1>
+        <p>Upload clear, readable documents. Files are stored outside the public static directory.</p>
+        <form id="verification-form" enctype="multipart/form-data">
+            <label>Face photo <input name="face_photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+            <label>National ID front <input name="national_id_front" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+            <label>National ID back <input name="national_id_back" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+            <label id="title-field">Land title (PDF; required for owners)
+                <input name="land_title" type="file" accept="application/pdf">
+            </label>
+            <button type="submit">Submit verification documents</button>
+        </form>
+        <p id="message" role="status"></p>
+    </main>
+    <script>
+        const token = localStorage.getItem('auth_token');
+        const message = document.getElementById('message');
+        if (!token) window.location.href = 'login.html';
+
+        document.getElementById('verification-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const response = await fetch('/api/verification/documents', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token },
+                body: new FormData(event.target)
+            });
+            const result = await response.json();
+            message.textContent = result.status === 'success'
+                ? 'Documents submitted for review.'
+                : (result.detail || result.message || 'Upload failed.');
+            if (response.status === 401 || response.status === 403) {
+                localStorage.removeItem('auth_token');
+                window.location.href = 'login.html';
+            }
+        });
+    </script>
+</body>
+</html>
