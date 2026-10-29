@@ -112,6 +112,19 @@ if CORS_ORIGINS:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if APP_ENV == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 # Password verification using built-in hashlib (SHA-256)
 # NOTE: Passwords in the database should be stored as sha256 hashes.
 # For the seed.sql dummy data, the plain password is 'password'.
@@ -174,12 +187,19 @@ def get_properties():
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.property_id, p.property_name, p.price, p.description, 
-               u.bedrooms, u.bathrooms, u.square_footage, m.url AS image_url
+         SELECT p.property_id, p.property_name, p.price, p.currency, p.description,
+             p.street, p.district, p.city, p.country, p.location,
+             p.latitude, p.longitude, p.is_featured, p.views,
+             u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent,
+             u.availability_status, m.url AS image_url,
+             (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
+              FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+              WHERE pam.property_id = p.property_id) AS amenities
         FROM property p
         LEFT JOIN unit u ON p.property_id = u.property_id
         LEFT JOIN property_media m ON p.property_id = m.property_id AND m.is_featured = 1
         WHERE p.property_status = 'Published'
+         ORDER BY p.created_at DESC
     """)
     properties = cursor.fetchall()
     cursor.close()
@@ -195,8 +215,11 @@ def get_property(id: str, request: Request):
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.*, COALESCE(o.name, 'Unknown Owner') AS owner_name, 
-               u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent, u.availability_status
+         SELECT p.*, COALESCE(o.name, 'Unknown Owner') AS owner_name,
+             u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent, u.availability_status,
+             (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
+              FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+              WHERE pam.property_id = p.property_id) AS amenities
         FROM property p
         LEFT JOIN owner o ON p.owner_id = o.owner_id
         LEFT JOIN unit u ON p.property_id = u.property_id
@@ -209,8 +232,15 @@ def get_property(id: str, request: Request):
         conn.close()
         return {"status": "error", "message": "Property not found."}
         
-    cursor.execute("SELECT url FROM property_media WHERE property_id = %s", (id,))
+    cursor.execute("SELECT url, type, is_featured FROM property_media WHERE property_id = %s ORDER BY is_featured DESC", (id,))
     prop['media'] = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT unit_number, floor, bedrooms, bathrooms, square_footage,
+               monthly_rent, availability_status
+        FROM unit WHERE property_id = %s ORDER BY unit_number
+    """, (id,))
+    prop['units'] = cursor.fetchall()
     
     cursor.close()
     conn.close()
@@ -543,7 +573,8 @@ def get_owner_overview(owner: dict = Depends(get_owner_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Owner profile not found")
         cursor.execute("""
-            SELECT property_id, property_name, city, property_status, price, views, created_at
+                 SELECT property_id, property_name, city, country, location, latitude, longitude,
+                     property_status, price, currency, views, created_at
             FROM property WHERE owner_id = %s ORDER BY created_at DESC
         """, (profile['owner_id'],))
         properties = cursor.fetchall()
@@ -583,7 +614,9 @@ def get_agent_overview(agent: dict = Depends(get_agent_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Agent profile not found")
         cursor.execute("""
-            SELECT p.property_id, p.property_name, p.city, p.property_status, p.price, p.views, p.created_at
+                 SELECT p.property_id, p.property_name, p.city, p.country, p.location,
+                     p.latitude, p.longitude, p.property_status, p.price, p.currency,
+                     p.views, p.created_at
             FROM listing l
             JOIN advertised_as aa ON aa.listing_id = l.listing_id
             JOIN property p ON p.property_id = aa.property_id
@@ -628,9 +661,14 @@ def get_tenant_overview(tenant: dict = Depends(get_tenant_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Tenant profile not found")
         cursor.execute("""
-            SELECT p.property_id, p.property_name, p.description, p.city, p.country, p.price,
+                 SELECT p.property_id, p.property_name, p.description, p.city, p.country,
+                     p.location, p.latitude, p.longitude, p.price, p.currency,
                    p.property_status, p.is_featured, p.views, u.bedrooms, u.bathrooms,
-                   u.square_footage, u.monthly_rent, m.url AS image_url
+                     u.square_footage, u.monthly_rent, u.availability_status,
+                     m.url AS image_url,
+                     (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
+                      FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+                      WHERE pam.property_id = p.property_id) AS amenities
             FROM property p
             LEFT JOIN unit u ON u.property_id = p.property_id
             LEFT JOIN property_media m ON m.property_id = p.property_id AND m.is_featured = 1
@@ -646,6 +684,100 @@ def get_tenant_overview(tenant: dict = Depends(get_tenant_user)):
             if inquiry.get('created_at'):
                 inquiry['created_at'] = str(inquiry['created_at'])
         return {"status": "success", "data": {"profile": profile, "properties": properties, "inquiries": inquiries}}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/tenant/viewings")
+def get_tenant_viewings(tenant: dict = Depends(get_tenant_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT tenant_id FROM tenant WHERE user_id = %s", (tenant['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Tenant profile not found")
+        cursor.execute("""
+            SELECT v.viewing_id, v.property_id, v.unit_number, v.viewing_date,
+                   v.viewing_time, v.status, p.property_name, p.city
+            FROM viewing v JOIN property p ON p.property_id = v.property_id
+            WHERE v.tenant_id = %s ORDER BY v.viewing_date DESC, v.viewing_time DESC
+        """, (profile['tenant_id'],))
+        rows = cursor.fetchall()
+        for row in rows:
+            row['viewing_date'] = str(row['viewing_date'])
+            row['viewing_time'] = str(row['viewing_time'])
+        return {"status": "success", "data": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/tenant/viewings")
+async def request_tenant_viewing(request: Request, tenant: dict = Depends(get_tenant_user)):
+    data = await request.json()
+    required = ('property_id', 'unit_number', 'viewing_date', 'viewing_time')
+    if any(not data.get(field) for field in required):
+        raise HTTPException(status_code=400, detail="Property, unit, date, and time are required")
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT tenant_id FROM tenant WHERE user_id = %s", (tenant['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Tenant profile not found")
+        cursor.execute("""
+            SELECT property_id FROM unit
+            WHERE property_id = %s AND unit_number = %s AND availability_status = 'Available'
+        """, (data['property_id'], data['unit_number']))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Available unit not found")
+        viewing_id = "VIEW_" + uuid.uuid4().hex[:12]
+        cursor.execute("""
+            INSERT INTO viewing (viewing_id, tenant_id, property_id, unit_number, viewing_date, viewing_time)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (viewing_id, profile['tenant_id'], data['property_id'], data['unit_number'], data['viewing_date'], data['viewing_time']))
+        conn.commit()
+        log_audit_action(tenant['user_id'], 'REQUEST_VIEWING', 'viewing', viewing_id, None, data['property_id'], request.client.host)
+        return {"status": "success", "viewing_id": viewing_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not request viewing") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/owner/agreements")
+def get_owner_agreements(owner: dict = Depends(get_owner_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT owner_id FROM owner WHERE user_id = %s", (owner['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Owner profile not found")
+        cursor.execute("""
+            SELECT ra.agreement_id, ra.property_id, ra.unit_number, ra.start_date,
+                   ra.end_date, ra.agreed_rent, ra.agreement_status, t.name AS tenant_name,
+                   p.property_name
+            FROM rental_agreement ra JOIN property p ON p.property_id = ra.property_id
+            JOIN tenant t ON t.tenant_id = ra.tenant_id
+            WHERE p.owner_id = %s ORDER BY ra.start_date DESC
+        """, (profile['owner_id'],))
+        rows = cursor.fetchall()
+        for row in rows:
+            row['start_date'] = str(row['start_date'])
+            if row.get('end_date'):
+                row['end_date'] = str(row['end_date'])
+        return {"status": "success", "data": rows}
     finally:
         cursor.close()
         conn.close()
@@ -966,7 +1098,9 @@ def get_admin_inquiries(admin: dict = Depends(get_admin_user)):
 @app.put("/api/admin/inquiries/{inquiry_id}/status")
 async def update_inquiry_status(inquiry_id: str, request: Request, admin: dict = Depends(get_admin_user)):
     data = await request.json()
-    new_status = data.get('status', 'READ')
+    new_status = data.get('status', 'IN_PROGRESS')
+    if new_status not in {'NEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'}:
+        raise HTTPException(status_code=400, detail="Invalid inquiry status")
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
