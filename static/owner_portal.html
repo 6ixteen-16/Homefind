@@ -33,6 +33,8 @@
         .btn-sm { padding:.3rem .65rem; font-size:.78rem; border-radius:6px; margin-right:.3rem; }
         .btn-confirm { background:#1d7a50; } .btn-confirm:hover { background:#155f3d; }
         .btn-cancel  { background:#7c2d2d; } .btn-cancel:hover  { background:#5e2020; }
+        input, select, textarea { border:1px solid #d1d5db; border-radius:6px; padding:.55rem .75rem; font-size:.9rem; width:100%; box-sizing:border-box; }
+        input:focus, select:focus, textarea:focus { outline:none; border-color:#173b35; }
         @media (max-width:850px) { .portal-grid,.content-grid { grid-template-columns:1fr 1fr; } .content-grid { display:block; } }
         @media (max-width:560px) { .portal-grid { grid-template-columns:1fr 1fr; } .portal-intro { display:block; } .portal-nav { align-items:flex-start; } }
     </style>
@@ -49,6 +51,35 @@
     </section>
     <div class="content-grid">
         <div>
+            <section class="panel">
+                <h2>Add a listing</h2>
+                <form id="listing-form" style="display:grid; gap:.65rem;">
+                    <input name="property_name" placeholder="Property name" required>
+                    <textarea name="description" placeholder="Description" required rows="3"></textarea>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+                        <input name="price" type="number" min="0" step="any" placeholder="Price (UGX)" required>
+                        <select name="property_type">
+                            <option value="Apartment">Apartment</option>
+                            <option value="Condominium">Condominium</option>
+                            <option value="Rental House">Rental House</option>
+                        </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem;">
+                        <input name="city" placeholder="City">
+                        <input name="district" placeholder="District">
+                        <input name="street" placeholder="Street">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+                        <input name="bedrooms" type="number" min="0" placeholder="Bedrooms">
+                        <input name="bathrooms" type="number" min="0" placeholder="Bathrooms">
+                    </div>
+                    <label style="font-size:0.85rem; font-weight:700; color:#294d45;">Featured Photo (JPEG, PNG, WebP max 5MB):
+                        <input name="image" type="file" accept="image/jpeg,image/png,image/webp">
+                    </label>
+                    <button type="submit">Submit as draft</button>
+                    <div id="listing-message" class="message"></div>
+                </form>
+            </section>
             <section class="panel"><h2>Portfolio</h2><div id="properties" class="table-wrap"></div></section>
             <section class="panel"><h2>Recent enquiries</h2><div id="inquiries" class="table-wrap"></div></section>
             <section class="panel"><h2>Scheduled viewings</h2><div id="viewings" class="table-wrap"></div></section>
@@ -147,6 +178,31 @@
     document.getElementById('logout').onclick = async () => { await fetch('/api/logout', { method: 'POST', headers }); localStorage.removeItem('auth_token'); location.href = 'login.html'; };
     load().catch(e => document.getElementById('properties').innerHTML = `<p class="empty">${esc(e.message)}</p>`);
     loadViewings();
+
+    document.getElementById('listing-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const msg = document.getElementById('listing-message');
+        msg.textContent = 'Submitting...';
+        msg.style.color = '#24704d';
+        const form = new FormData(event.target);
+        form.set('country', 'Uganda');
+        try {
+            const response = await fetch('/api/owner/listings', { method: 'POST', headers, body: form });
+            const result = await response.json();
+            if (response.status === 200 && result.status === 'success') {
+                msg.textContent = result.message || 'Listing submitted as Draft. An admin will review and publish it.';
+                msg.style.color = '#24704d';
+                event.target.reset();
+                load();
+            } else {
+                msg.textContent = result.detail || result.message || 'Failed to submit listing';
+                msg.style.color = '#9b1c1c';
+            }
+        } catch(err) {
+            msg.textContent = err.message;
+            msg.style.color = '#9b1c1c';
+        }
+    });
 </script>
 </body>
 </html>

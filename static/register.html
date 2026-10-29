@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account - Homefind</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { display:flex; justify-content:center; align-items:flex-start; min-height:100vh; background:var(--background); padding:2rem 1rem; }
+        .card { background:var(--white); padding:2rem; border-radius:12px; width:100%; max-width:440px; box-shadow:0 4px 16px rgba(0,0,0,0.1); }
+        h2 { text-align:center; margin-bottom:.4rem; color:var(--primary-color); }
+        .subtitle { text-align:center; font-size:.85rem; color:var(--text-muted); margin-bottom:1.5rem; }
+        .form-group { display:flex; flex-direction:column; gap:.3rem; margin-bottom:1rem; }
+        label { font-size:.85rem; font-weight:600; color:var(--text-color); }
+        input, select { padding:.55rem .75rem; border:1px solid #d1d5db; border-radius:6px; font-size:.95rem; width:100%; box-sizing:border-box; }
+        input:focus, select:focus { outline:none; border-color:var(--primary-color); box-shadow:0 0 0 3px rgba(16,119,84,.12); }
+        .hint { font-size:.75rem; color:var(--text-muted); }
+        .extra-field { display:none; }
+        #msg { display:none; padding:.6rem .8rem; border-radius:6px; margin-bottom:1rem; font-size:.9rem; text-align:center; }
+        .msg-error { background:#fee2e2; color:#dc2626; }
+        .msg-success { background:#d1fae5; color:#065f46; }
+        .btn-primary { width:100%; padding:.7rem; font-size:1rem; margin-top:.5rem; }
+        .login-link { text-align:center; margin-top:1rem; font-size:.85rem; color:var(--text-muted); }
+        .login-link a { color:var(--primary-color); text-decoration:none; font-weight:600; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>Create Account</h2>
+    <p class="subtitle">Join Homefind — an admin will activate your account shortly.</p>
+
+    <div id="msg"></div>
+
+    <form id="register-form">
+        <div class="form-group">
+            <label for="role">I am a…</label>
+            <select id="role" required>
+                <option value="" disabled selected>Select your role</option>
+                <option value="Tenant">Tenant — looking for a home</option>
+                <option value="Owner">Owner — I have property to list</option>
+                <option value="Agent">Agent — I represent properties</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="name">Full name</label>
+            <input type="text" id="name" placeholder="e.g. Jane Wanjiku" required maxlength="255">
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email address</label>
+            <input type="email" id="email" placeholder="you@example.com" required maxlength="255">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="At least 8 characters" required>
+            <span class="hint">Min 8 characters. Cannot be a common password.</span>
+        </div>
+
+        <!-- Agent only -->
+        <div class="form-group extra-field" id="field-phone">
+            <label for="phone_number">Phone number <span class="hint">(optional)</span></label>
+            <input type="tel" id="phone_number" placeholder="+254 7XX XXX XXX" maxlength="50">
+        </div>
+
+        <!-- Tenant only -->
+        <div class="form-group extra-field" id="field-dob">
+            <label for="date_of_birth">Date of birth <span class="hint">(optional)</span></label>
+            <input type="date" id="date_of_birth">
+        </div>
+
+        <button type="submit" class="btn-primary" id="submit-btn">Create account</button>
+    </form>
+
+    <p class="login-link">Already have an account? <a href="login.html">Sign in</a></p>
+</div>
+
+<script>
+    const roleEl   = document.getElementById('role');
+    const msgEl    = document.getElementById('msg');
+    const submitEl = document.getElementById('submit-btn');
+
+    roleEl.addEventListener('change', () => {
+        document.getElementById('field-phone').style.display = roleEl.value === 'Agent'  ? 'flex' : 'none';
+        document.getElementById('field-dob').style.display   = roleEl.value === 'Tenant' ? 'flex' : 'none';
+    });
+
+    function showMsg(text, type) {
+        msgEl.textContent = text;
+        msgEl.className = type === 'error' ? 'msg-error' : 'msg-success';
+        msgEl.style.display = 'block';
+    }
+
+    document.getElementById('register-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        submitEl.disabled = true;
+        submitEl.textContent = 'Creating account…';
+        msgEl.style.display = 'none';
+
+        const body = {
+            role:           roleEl.value,
+            name:           document.getElementById('name').value,
+            email:          document.getElementById('email').value,
+            password:       document.getElementById('password').value,
+            phone_number:   document.getElementById('phone_number').value,
+            date_of_birth:  document.getElementById('date_of_birth').value || null,
+        };
+
+        try {
+            const r = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const d = await r.json();
+            if (d.status === 'success') {
+                showMsg(d.message, 'success');
+                document.getElementById('register-form').reset();
+                document.getElementById('field-phone').style.display = 'none';
+                document.getElementById('field-dob').style.display   = 'none';
+            } else {
+                showMsg(d.message || d.detail || 'Registration failed.', 'error');
+            }
+        } catch {
+            showMsg('Could not reach the server. Please try again.', 'error');
+        } finally {
+            submitEl.disabled = false;
+            submitEl.textContent = 'Create account';
+        }
+    });
+</script>
+</body>
+</html>

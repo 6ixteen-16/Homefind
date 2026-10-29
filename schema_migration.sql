@@ -51,3 +51,8 @@ ALTER TABLE property_amenity MODIFY amenity_id INT NOT NULL;
 ALTER TABLE property_amenity ADD CONSTRAINT property_amenity_ibfk_2
     FOREIGN KEY (amenity_id) REFERENCES amenity(amenity_id)
     ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Add is_active flag for pending-approval registration (run once on existing databases).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1;
+-- Mark all pre-existing accounts as active so nothing breaks.
+UPDATE users SET is_active = 1 WHERE is_active IS NULL OR is_active = 0;
