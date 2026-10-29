@@ -8,7 +8,6 @@
   <style>
     body { display:flex; justify-content:center; align-items:center; min-height:100vh; background:#f4f6f8; font-family:system-ui, -apple-system, sans-serif; margin:0; }
     .card { background:#fff; padding:2.5rem 2rem; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.08); width:100%; max-width:440px; text-align:center; box-sizing:border-box; }
-    .icon { font-size:3rem; margin-bottom:1rem; }
     h2 { margin:0 0 0.8rem; color:#1a1a2e; }
     p { color:#555; font-size:1rem; line-height:1.5; margin:0 0 1.5rem; }
     .btn { display:inline-block; width:100%; padding:0.8rem; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px; font-size:1rem; font-weight:600; box-sizing:border-box; }
@@ -19,7 +18,6 @@
 </head>
 <body>
 <div class="card" id="card">
-  <div class="icon" id="icon">&#9203;</div>
   <h2 id="title">Verifying email...</h2>
   <p id="desc">Please wait while we verify your account.</p>
   <div id="actions"></div>
@@ -27,32 +25,25 @@
 
 <script>
   const params = new URLSearchParams(location.search);
-  const card = document.getElementById('card');
-  const icon = document.getElementById('icon');
   const title = document.getElementById('title');
   const desc = document.getElementById('desc');
   const actions = document.getElementById('actions');
 
   if (params.get('token')) {
-    // If opened directly with ?token=..., forward to backend verification endpoint
     window.location.replace('/api/verify_email?token=' + encodeURIComponent(params.get('token')));
   } else if (params.get('success') === '1') {
-    icon.textContent = '✅';
-    title.textContent = 'Email Verified!';
+    title.textContent = 'Email Verified';
     desc.textContent = 'Your account has been successfully verified and activated. You can now log in to your tenant account.';
     actions.innerHTML = '<a class="btn" href="login.html">Sign In to Homefind</a>';
   } else if (params.get('already_verified') === '1') {
-    icon.textContent = 'ℹ️';
     title.textContent = 'Already Verified';
     desc.textContent = 'This account has already been verified. You can log in directly.';
     actions.innerHTML = '<a class="btn" href="login.html">Go to Sign In</a>';
   } else if (params.get('error') === 'expired') {
-    icon.textContent = '⚠️';
     title.textContent = 'Link Expired';
     desc.textContent = 'This verification link has expired (links are valid for 24 hours). Please contact support or register again.';
     actions.innerHTML = '<a class="btn" href="register.html">Register Again</a><a class="btn btn-secondary" href="login.html">Back to Sign In</a>';
   } else {
-    icon.textContent = '❌';
     title.textContent = 'Invalid Verification Link';
     desc.textContent = 'We could not verify your email with this link. It may be invalid or already used.';
     actions.innerHTML = '<a class="btn" href="login.html">Back to Sign In</a>';
