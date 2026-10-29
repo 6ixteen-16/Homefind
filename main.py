@@ -136,7 +136,7 @@ def get_agent_user(user: dict = Depends(require_roles("Agent"))):
 def get_tenant_user(user: dict = Depends(require_roles("Tenant"))):
     return user
 
-DESTINATIONS = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
+DESTINATIONS = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'properties.html', 'Admin': 'dashboard.html'}
 
 def new_session(user_id, role):
     token = secrets.token_urlsafe(32)
