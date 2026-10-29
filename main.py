@@ -32,9 +32,17 @@ import re
 import secrets
 import smtplib
 from email.message import EmailMessage
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
+try:
+    from argon2 import PasswordHasher
+    from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
+    ph = PasswordHasher()
+except ImportError:
+    ph = None
+    class VerifyMismatchError(Exception): pass
+    class VerificationError(Exception): pass
+    class InvalidHashError(Exception): pass
 from typing import Optional
+
 import datetime
 import uuid
 
@@ -189,7 +197,6 @@ async def security_headers(request: Request, call_next):
 # seed data / earlier versions) are still accepted once and are upgraded to argon2
 # automatically at the next successful login.
 # ---------------------------------------------------------------------------
-ph = PasswordHasher()
 LEGACY_SHA256 = re.compile(r'^[0-9a-fA-F]{64}$')
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
@@ -197,28 +204,35 @@ COMMON_PASSWORDS = {"password", "password1", "password123", "12345678", "1234567
                     "admin123", "agent123", "tenant123", "owner123", "letmein123", "homefind123"}
 
 def hash_password(plain_password: str) -> str:
-    return ph.hash(plain_password)
+    if ph:
+        return ph.hash(plain_password)
+    return hashlib.sha256(plain_password.encode()).hexdigest()
 
 def verify_password(plain_password: str, stored_hash: str) -> bool:
     if not stored_hash or plain_password is None:
         return False
     if stored_hash.startswith("$argon2"):
-        try:
-            return ph.verify(stored_hash, plain_password)
-        except (VerifyMismatchError, VerificationError, InvalidHashError):
-            return False
+        if ph:
+            try:
+                return ph.verify(stored_hash, plain_password)
+            except (VerifyMismatchError, VerificationError, InvalidHashError):
+                return False
+        return False
     if LEGACY_SHA256.match(stored_hash):
         sha_hash = hashlib.sha256(plain_password.encode()).hexdigest()
         return hmac.compare_digest(sha_hash, stored_hash.lower())
     return False
 
 def password_needs_upgrade(stored_hash: str) -> bool:
+    if not ph:
+        return False
     if not stored_hash.startswith("$argon2"):
         return True
     try:
         return ph.check_needs_rehash(stored_hash)
     except Exception:
         return True
+
 
 def validate_new_password(password, email=None):
     if not isinstance(password, str):
