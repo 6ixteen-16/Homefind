@@ -213,3 +213,12 @@ CREATE TABLE IF NOT EXISTS rental_agreement (
     FOREIGN KEY (tenant_id) REFERENCES tenant(tenant_id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (property_id, unit_number) REFERENCES unit(property_id, unit_number) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(20) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

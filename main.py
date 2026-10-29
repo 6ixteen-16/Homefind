@@ -62,6 +62,8 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@homefind.local")
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") != "0"
+APP_URL = os.getenv("APP_URL", "http://127.0.0.1:8000")
+PASSWORD_RESET_TTL_SECONDS = 3600  # 1 hour
 
 from collections import defaultdict, deque
 import time
@@ -589,6 +591,37 @@ def send_otp(email, otp):
         return True
     return False
 
+def send_password_reset_email(email: str, reset_url: str) -> bool:
+    """E-mail a password-reset link. Returns True on success."""
+    if SMTP_HOST:
+        try:
+            message = EmailMessage()
+            message["Subject"] = "Homefind – Reset your password"
+            message["From"] = SMTP_FROM
+            message["To"] = email
+            message.set_content(
+                f"Hello,\n\n"
+                f"Someone requested a password reset for your Homefind account.\n\n"
+                f"Click the link below to choose a new password (expires in 1 hour):\n\n"
+                f"{reset_url}\n\n"
+                f"If you did not request this, you can safely ignore this email.\n\n"
+                f"– Homefind"
+            )
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+                if SMTP_STARTTLS:
+                    smtp.starttls()
+                if SMTP_USER:
+                    smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(message)
+            return True
+        except Exception as exc:
+            print(f"Could not send reset email: {exc!r}")
+            return False
+    if APP_ENV != "production":
+        print(f"[DEV ONLY] Password reset link for {email}: {reset_url}")
+        return True
+    return False
+
 def verify_otp_step(req: LoginRequest, request: Request):
     pending = sessions.get(req.session_token)
     if not pending or 'expected_otp' not in pending:
@@ -632,10 +665,31 @@ def login(req: LoginRequest, request: Request):
         if error:
             return {"status": "error", "message": error}
 
-        # Password aging: the user must choose a new password before getting a session.
+        # Password aging: if password is older than 90 days, block login and send a reset link.
         days_old = (datetime.datetime.now() - user['password_last_changed']).days
         if days_old > 90:
-            return {"status": "success", "redirect": "change_password.html", "password_change_required": True}
+            # Issue a reset token and email it automatically
+            try:
+                token = secrets.token_urlsafe(48)
+                expires = datetime.datetime.now() + datetime.timedelta(seconds=PASSWORD_RESET_TTL_SECONDS)
+                cursor.execute(
+                    "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (%s, %s, %s)",
+                    (token, user['user_id'], expires)
+                )
+                conn.commit()
+                reset_url = f"{APP_URL}/reset_password.html?token={token}"
+                send_password_reset_email(user['email'], reset_url)
+                log_audit_action(user['user_id'], 'PASSWORD_EXPIRED', 'users', user['user_id'], None, None, request.client.host)
+            except Exception:
+                pass  # Don't block the response if token insert fails
+            return {
+                "status": "error",
+                "password_change_required": True,
+                "message": (
+                    "Your password has expired (passwords must be updated every 90 days). "
+                    "A reset link has been sent to your email address."
+                )
+            }
 
         if user['otp_enabled']:
             otp = str(secrets.randbelow(900000) + 100000)
@@ -800,6 +854,88 @@ async def activate_user(user_id: str, request: Request,
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail="Could not update user status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/forgot_password")
+async def forgot_password(request: Request):
+    """Generate a password-reset token and e-mail a link to the user."""
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"forgot:{client_ip}", 5, 3600)
+    data = await read_json_object(request)
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return err("Email is required.")
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT user_id, email FROM users WHERE email = %s AND is_active = 1", (email,))
+        user = cursor.fetchone()
+        # Always return success to avoid user enumeration
+        if user:
+            token = secrets.token_urlsafe(48)
+            expires = datetime.datetime.now() + datetime.timedelta(seconds=PASSWORD_RESET_TTL_SECONDS)
+            cursor.execute(
+                "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (%s, %s, %s)",
+                (token, user["user_id"], expires)
+            )
+            conn.commit()
+            reset_url = f"{APP_URL}/reset_password.html?token={token}"
+            send_password_reset_email(user["email"], reset_url)
+            log_audit_action(user["user_id"], "FORGOT_PASSWORD", "users", user["user_id"], None, None, client_ip)
+        return {"status": "success", "message": "If that email is registered, a reset link has been sent."}
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "forgot_password")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/reset_password")
+async def reset_password(request: Request):
+    """Consume a reset token and set a new password."""
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"reset_token:{client_ip}", 10, 3600)
+    data = await read_json_object(request)
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password", "")
+    if not token or not new_password:
+        return err("Token and new password are required.")
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT t.user_id, u.email FROM password_reset_tokens t "
+            "JOIN users u ON u.user_id = t.user_id "
+            "WHERE t.token = %s AND t.used = 0 AND t.expires_at > NOW()",
+            (token,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return err("Reset link is invalid or has expired. Please request a new one.", 400)
+        pwd_error = validate_new_password(new_password, row["email"])
+        if pwd_error:
+            return err(pwd_error)
+        cursor.execute(
+            "UPDATE users SET password_hash = %s, password_last_changed = NOW(), "
+            "failed_login_attempts = 0, locked_until = NULL WHERE user_id = %s",
+            (hash_password(new_password), row["user_id"])
+        )
+        cursor.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = %s", (token,))
+        conn.commit()
+        purge_user_sessions(row["user_id"])
+        log_audit_action(row["user_id"], "PASSWORD_RESET", "users", row["user_id"], None, None, client_ip)
+        return {"status": "success", "message": "Password updated. You can now sign in.", "redirect": "login.html"}
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "reset_password")
     finally:
         cursor.close()
         conn.close()
