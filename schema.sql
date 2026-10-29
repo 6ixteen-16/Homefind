@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('Admin', 'Agent', 'Owner', 'Tenant') NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
     otp_secret VARCHAR(64) NULL,
     otp_enabled TINYINT(1) NOT NULL DEFAULT 0,
     password_last_changed DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

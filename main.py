@@ -6,7 +6,6 @@ from pydantic import BaseModel
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from demo_data import DEMO_PROPERTIES
 
 load_dotenv()
 
@@ -63,6 +62,23 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@homefind.local")
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") != "0"
+
+from collections import defaultdict, deque
+import time
+
+# ---------------------------------------------------------------------------
+# In-memory sliding-window rate limiting
+# ---------------------------------------------------------------------------
+_rate_limits = defaultdict(deque)
+
+def rate_limit(key: str, limit: int, window_seconds: int) -> None:
+    now = time.monotonic()
+    q = _rate_limits[key]
+    while q and now - q[0] > window_seconds:
+        q.popleft()
+    if len(q) >= limit:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+    q.append(now)
 
 def now_ts():
     return datetime.datetime.now(datetime.timezone.utc).timestamp()
@@ -141,7 +157,6 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASS = os.getenv("DB_PASS", "")
 DB_NAME = os.getenv("DB_NAME", "homefinder_db")
-DEMO_MODE = os.getenv("DEMO_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 
@@ -248,8 +263,6 @@ def validate_new_password(password, email=None):
 
 # Connect to Database
 def get_db_connection():
-    if DEMO_MODE:
-        return None
     try:
         return pymysql.connect(
             host=DB_HOST,
@@ -431,30 +444,6 @@ def delete_upload_files(urls):
 # API Endpoints
 @app.get("/api/get_properties")
 def get_properties():
-    if DEMO_MODE:
-        properties = [
-            {
-                "property_id": prop["property_id"],
-                "property_name": prop["property_name"],
-                "price": prop["price"],
-                "currency": prop.get("currency", "USD"),
-                "description": prop["description"],
-                "location": prop.get("location"),
-                "city": prop.get("city"),
-                "country": prop.get("country"),
-                "is_featured": prop["is_featured"],
-                "bedrooms": prop["bedrooms"],
-                "bathrooms": prop["bathrooms"],
-                "square_footage": prop["square_footage"],
-                "monthly_rent": prop["monthly_rent"],
-                "availability_status": prop.get("availability_status", "Available"),
-                "amenities": prop.get("amenities"),
-                "image_url": prop["media"][0]["url"] if prop["media"] else None,
-            }
-            for prop in DEMO_PROPERTIES
-        ]
-        return {"status": "success", "data": properties}
-
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
@@ -485,12 +474,6 @@ def get_properties():
 
 @app.get("/api/get_property")
 def get_property(id: str, request: Request, authorization: Optional[str] = Header(None)):
-    if DEMO_MODE:
-        prop = next((item for item in DEMO_PROPERTIES if item["property_id"] == id), None)
-        if not prop:
-            return err("Property not found.", 404)
-        return {"status": "success", "data": prop}
-
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
@@ -553,6 +536,8 @@ def authenticate(conn, cursor, email, password, ip):
     user = cursor.fetchone()
     if not user:
         return None, INVALID_MESSAGE
+    if not user.get('is_active', 1):
+        return None, "Your account is pending admin approval. You will be notified once it is activated."
 
     now = datetime.datetime.now()
     locked_until = user['locked_until']
@@ -626,8 +611,12 @@ def verify_otp_step(req: LoginRequest, request: Request):
 
 @app.post("/api/login")
 def login(req: LoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"login:{client_ip}", 20, 300)
+
     # OTP Verification Step
     if req.session_token and req.otp:
+        rate_limit(f"otp:{client_ip}", 10, 300)
         return verify_otp_step(req, request)
 
     if not req.email or not req.password:
@@ -671,6 +660,145 @@ def login(req: LoginRequest, request: Request):
     finally:
         cursor.close()
         conn.close()
+
+# ---------------------------------------------------------------------------
+# Self-registration (Tenant / Owner / Agent)
+# ---------------------------------------------------------------------------
+
+REGISTER_ROLES = {"Tenant", "Owner", "Agent"}
+
+@app.post("/api/register")
+async def register(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"register:{client_ip}", 10, 3600)
+    data = await read_json_object(request)
+    if not data:
+        return err("Invalid request body.")
+
+    role = (data.get('role') or '').strip()
+    if role not in REGISTER_ROLES:
+        return err(f"Role must be one of: {', '.join(sorted(REGISTER_ROLES))}.")
+
+    name, e1 = text_field(data, 'name', 'Name', 255)
+    if e1: return err(e1)
+    email, e2 = email_field(data)
+    if e2: return err(e2)
+    password = data.get('password', '')
+    pwd_error = validate_new_password(password, email)
+    if pwd_error: return err(pwd_error)
+
+    # Role-specific optional fields
+    phone = (data.get('phone_number') or '').strip()[:50]
+    dob   = (data.get('date_of_birth') or '').strip() or None
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT user_id FROM users WHERE email = %s", (email,))
+        if cursor.fetchone():
+            return err("Email already registered")
+
+        user_id = "USR_" + uuid.uuid4().hex[:12]
+        hashed  = hash_password(password)
+        cursor.execute("""
+            INSERT INTO users (user_id, email, password_hash, role, is_active)
+            VALUES (%s, %s, %s, %s, 0)
+        """, (user_id, email, hashed, role))
+
+        if role == 'Tenant':
+            tenant_id = "TEN_" + uuid.uuid4().hex[:12]
+            cursor.execute("""
+                INSERT INTO tenant (tenant_id, user_id, name, email, date_of_birth)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (tenant_id, user_id, name, email, dob))
+        elif role == 'Owner':
+            owner_id = "OWN_" + uuid.uuid4().hex[:12]
+            cursor.execute("""
+                INSERT INTO owner (owner_id, user_id, name, email)
+                VALUES (%s, %s, %s, %s)
+            """, (owner_id, user_id, name, email))
+        elif role == 'Agent':
+            agent_id = "AGT_" + uuid.uuid4().hex[:12]
+            cursor.execute("""
+                INSERT INTO agent (agent_id, user_id, name, email, phone_number)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (agent_id, user_id, name, email, phone or None))
+
+        conn.commit()
+        log_audit_action(user_id, 'REGISTER', 'users', user_id, None, role, request.client.host)
+        return {"status": "success",
+                "message": "Account created. An admin will review and activate it shortly."}
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Registration failed") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/admin/pending_users")
+def get_pending_users(admin: dict = Depends(get_admin_user)):
+    """Return all accounts with is_active = 0 awaiting admin approval."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT user_id, email, role, created_at
+            FROM users WHERE is_active = 0
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        for row in rows:
+            if row.get('created_at'):
+                row['created_at'] = str(row['created_at'])
+        return {"status": "success", "data": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/admin/users/{user_id}/activate")
+async def activate_user(user_id: str, request: Request,
+                        admin: dict = Depends(get_admin_user)):
+    """Approve (activate=true) or reject (activate=false) a pending registration."""
+    data = await read_json_object(request)
+    activate = bool(data.get('activate', True)) if data else True
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT user_id, email, role, is_active FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if activate:
+            cursor.execute("UPDATE users SET is_active = 1 WHERE user_id = %s", (user_id,))
+            action = 'ACTIVATE_USER'
+        else:
+            # Rejection: delete the user and their role row (cascade handles role table)
+            cursor.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
+            action = 'REJECT_USER'
+
+        conn.commit()
+        log_audit_action(admin['user_id'], action, 'users', user_id, None, user['email'], request.client.host)
+        return {"status": "success", "action": action, "user_id": user_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not update user status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app.post("/api/change_password")
 def change_password(req: ChangePasswordRequest, request: Request):
@@ -824,6 +952,8 @@ def save_inquiry(data, property_id, subject=None):
 
 @app.post("/api/contact")
 async def contact(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"inquiry:{client_ip}", 15, 300)
     data = await read_json_object(request)
     if data is None:
         return err("Invalid request.")
@@ -840,6 +970,8 @@ async def contact(request: Request):
 
 @app.post("/api/submit_inquiry")
 async def submit_inquiry(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limit(f"inquiry:{client_ip}", 15, 300)
     data = await read_json_object(request)
     if data is None:
         return err("Invalid request.")
@@ -1239,6 +1371,206 @@ async def update_owner_viewing_status(viewing_id: str, request: Request,
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail="Could not update viewing status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Owner-managed listings (an Owner can only touch their OWN properties)
+# New listings start as 'Draft'; an admin publishes them from admin_listings.html
+# ---------------------------------------------------------------------------
+
+def _owner_id_for(cursor, user_id: str) -> str:
+    cursor.execute("SELECT owner_id FROM owner WHERE user_id = %s", (user_id,))
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Owner profile not found")
+    return row['owner_id']
+
+def _assert_owns(cursor, property_id: str, owner_id: str):
+    cursor.execute("SELECT property_id FROM property WHERE property_id = %s AND owner_id = %s", (property_id, owner_id))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Property not found or does not belong to you")
+
+@app.post("/api/owner/listings")
+async def owner_create_listing(
+    property_name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    property_type: str = Form("Apartment"),
+    street: str = Form(""),
+    city: str = Form(""),
+    country: str = Form("Uganda"),
+    district: str = Form(""),
+    bedrooms: int = Form(0),
+    bathrooms: int = Form(0),
+    square_footage: float = Form(0),
+    monthly_rent: float = Form(0),
+    amenities: str = Form(""),
+    image: UploadFile = File(None),
+    owner: dict = Depends(get_owner_user)
+):
+    form = dict(property_name=property_name, description=description, price=price, property_status="Draft",
+                property_type=property_type, street=street, city=city, country=country, district=district,
+                bedrooms=bedrooms, bathrooms=bathrooms, square_footage=square_footage, monthly_rent=monthly_rent,
+                amenities=amenities, owner_id="PENDING")
+    clean, error = validate_listing_form(form, creating=True)
+    if error:
+        return err(error)
+
+    try:
+        image_content, image_ext = await read_listing_image(image)
+    except ValueError as exc:
+        return err(str(exc))
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    saved_file = None
+    try:
+        owner_id = _owner_id_for(cursor, owner['user_id'])
+        property_id = "PROP_" + str(uuid.uuid4())[:8]
+
+        cursor.execute("""
+            INSERT INTO property (property_id, property_name, description, price, property_status, street, district, city, country, owner_id)
+            VALUES (%s, %s, %s, %s, 'Draft', %s, %s, %s, %s, %s)
+        """, (property_id, clean['property_name'], clean['description'], clean['price'],
+              clean['street'], clean['district'], clean['city'], clean['country'], owner_id))
+
+        if clean['property_type'] == "Apartment":
+            cursor.execute("INSERT INTO apartment (property_id, amenities) VALUES (%s, %s)", (property_id, clean['amenities']))
+        elif clean['property_type'] == "Condominium":
+            cursor.execute("INSERT INTO condominium (property_id, amenities) VALUES (%s, %s)", (property_id, clean['amenities']))
+        elif clean['property_type'] == "Rental House":
+            cursor.execute("INSERT INTO rental_house (property_id) VALUES (%s)", (property_id,))
+
+        if clean['bedrooms'] or clean['bathrooms'] or clean['square_footage'] or clean['monthly_rent']:
+            cursor.execute("""
+                INSERT INTO unit (property_id, unit_number, bedrooms, bathrooms, square_footage, monthly_rent, availability_status)
+                VALUES (%s, 'MAIN', %s, %s, %s, %s, 'Available')
+            """, (property_id, clean['bedrooms'], clean['bathrooms'], clean['square_footage'], clean['monthly_rent'] or clean['price']))
+
+        if image_content:
+            saved_file = write_listing_image(property_id, image_content, image_ext)
+            cursor.execute("INSERT INTO property_media (media_id, property_id, url, type, is_featured) VALUES (%s, %s, %s, 'IMAGE', 1)",
+                           (str(uuid.uuid4()), property_id, f"/uploads/{saved_file}"))
+
+        conn.commit()
+        log_audit_action(owner['user_id'], 'OWNER_CREATE_PROPERTY', 'property', property_id, None, f"Draft: {clean['property_name']}", None)
+        return {"status": "success", "message": "Listing saved as Draft. An admin will review and publish it."}
+    except HTTPException:
+        conn.rollback()
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        conn.rollback()
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        return server_error(e, "owner_create_listing")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.put("/api/owner/listings/{property_id}")
+async def owner_update_listing(
+    property_id: str,
+    property_name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    property_type: str = Form("Apartment"),
+    street: str = Form(""),
+    city: str = Form(""),
+    country: str = Form("Uganda"),
+    district: str = Form(""),
+    bedrooms: int = Form(0),
+    bathrooms: int = Form(0),
+    square_footage: float = Form(0),
+    monthly_rent: float = Form(0),
+    amenities: str = Form(""),
+    image: UploadFile = File(None),
+    owner: dict = Depends(get_owner_user)
+):
+    form = dict(property_name=property_name, description=description, price=price, property_status="Draft",
+                property_type=property_type, street=street, city=city, country=country, district=district,
+                bedrooms=bedrooms, bathrooms=bathrooms, square_footage=square_footage, monthly_rent=monthly_rent,
+                amenities=amenities, owner_id="PENDING")
+    clean, error = validate_listing_form(form, creating=False)
+    if error:
+        return err(error)
+
+    try:
+        image_content, image_ext = await read_listing_image(image)
+    except ValueError as exc:
+        return err(str(exc))
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    saved_file = None
+    try:
+        owner_id = _owner_id_for(cursor, owner['user_id'])
+        _assert_owns(cursor, property_id, owner_id)
+
+        cursor.execute("""
+            UPDATE property SET property_name=%s, description=%s, price=%s, street=%s, district=%s, city=%s, country=%s
+            WHERE property_id=%s AND owner_id=%s
+        """, (clean['property_name'], clean['description'], clean['price'], clean['street'], clean['district'], clean['city'], clean['country'], property_id, owner_id))
+
+        cursor.execute("""
+            UPDATE unit SET bedrooms=%s, bathrooms=%s, square_footage=%s, monthly_rent=%s
+            WHERE property_id=%s AND unit_number='MAIN'
+        """, (clean['bedrooms'], clean['bathrooms'], clean['square_footage'], clean['monthly_rent'] or clean['price'], property_id))
+
+        if image_content:
+            old_urls = get_property_image_urls(cursor, property_id)
+            saved_file = write_listing_image(property_id, image_content, image_ext)
+            cursor.execute("DELETE FROM property_media WHERE property_id=%s", (property_id,))
+            cursor.execute("INSERT INTO property_media (media_id, property_id, url, type, is_featured) VALUES (%s, %s, %s, 'IMAGE', 1)",
+                           (str(uuid.uuid4()), property_id, f"/uploads/{saved_file}"))
+            delete_upload_files(old_urls)
+
+        conn.commit()
+        log_audit_action(owner['user_id'], 'OWNER_UPDATE_PROPERTY', 'property', property_id, None, f"Updated: {clean['property_name']}", None)
+        return {"status": "success", "message": "Listing updated successfully"}
+    except HTTPException:
+        conn.rollback()
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        conn.rollback()
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        return server_error(e, "owner_update_listing")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.delete("/api/owner/listings/{property_id}")
+def owner_delete_listing(property_id: str, owner: dict = Depends(get_owner_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        owner_id = _owner_id_for(cursor, owner['user_id'])
+        _assert_owns(cursor, property_id, owner_id)
+        old_urls = get_property_image_urls(cursor, property_id)
+        cursor.execute("DELETE FROM property WHERE property_id = %s AND owner_id = %s", (property_id, owner_id))
+        conn.commit()
+        delete_upload_files(old_urls)
+        log_audit_action(owner['user_id'], 'OWNER_DELETE_PROPERTY', 'property', property_id, None, "Deleted by owner", None)
+        return {"status": "success", "message": "Listing deleted"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        return server_error(e, "owner_delete_listing")
     finally:
         cursor.close()
         conn.close()

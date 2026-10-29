@@ -37,7 +37,6 @@ Homefind is a property listing and property-management system built with FastAPI
 |-- seed.sql                 Example property and user data inserts
 |-- schema.sql               Canonical database schema
 |-- schema_migration.sql     Safe upgrade for existing installations
-|-- demo_data.py             Database-free local demo property data
 |-- FIXES.md                 Security and bugfix documentation
 
 |-- test_users.sql           Additional test-user inserts
@@ -701,11 +700,9 @@ DB_NAME = "homefinder_db"
 
 `main.py` and `run_seed.py` automatically load a local `.env` file when present. Copy `.env.example` to `.env` and set real values in your process manager or deployment secret store. On Windows PowerShell you may also use `$env:DB_PASS = '...'`; on macOS use `export DB_PASS='...'`; Docker can use `--env-file .env`. Never commit `.env`.
 
-### Database-free local demo
+### Local Database Setup
 
-Set `DEMO_MODE=1` in `.env` to browse the 16 built-in sample properties without connecting to MySQL. The demo serves property lists and detail pages from local sample data; database-backed login, inquiries, contact submissions, and management actions remain unavailable. No database credentials are required, and the application will not open a database connection in this mode.
-
-Set `DEMO_MODE=0` and configure valid `DB_*` values to use the live database instead.
+Configure valid `DB_*` values in `.env` (or use the defaults for local MySQL). Run `schema.sql` (and optionally `seed.sql`) to set up the database tables and initial data. All endpoints connect directly to your local MySQL database.
 
 
 ## Run the application
