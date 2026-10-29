@@ -702,10 +702,12 @@ async def register(request: Request):
 
         user_id = "USR_" + uuid.uuid4().hex[:12]
         hashed  = hash_password(password)
+        # Tenants are activated immediately; other roles need admin approval.
+        auto_active = 1 if role == "Tenant" else 0
         cursor.execute("""
             INSERT INTO users (user_id, email, password_hash, role, is_active)
-            VALUES (%s, %s, %s, %s, 0)
-        """, (user_id, email, hashed, role))
+            VALUES (%s, %s, %s, %s, %s)
+        """, (user_id, email, hashed, role, auto_active))
 
         if role == 'Tenant':
             tenant_id = "TEN_" + uuid.uuid4().hex[:12]
@@ -728,8 +730,11 @@ async def register(request: Request):
 
         conn.commit()
         log_audit_action(user_id, 'REGISTER', 'users', user_id, None, role, request.client.host)
-        return {"status": "success",
-                "message": "Account created. An admin will review and activate it shortly."}
+        if role == "Tenant":
+            msg = "Account created. You can log in immediately."
+        else:
+            msg = "Account created. An admin will review and activate it shortly."
+        return {"status": "success", "message": msg}
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail="Registration failed") from exc
