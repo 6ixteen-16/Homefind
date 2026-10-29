@@ -1163,6 +1163,173 @@ def get_owner_agreements(owner: dict = Depends(get_owner_user)):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Owner viewing management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/owner/viewings")
+def get_owner_viewings(owner: dict = Depends(get_owner_user)):
+    """Return all viewings for properties owned by this owner."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT owner_id FROM owner WHERE user_id = %s", (owner['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Owner profile not found")
+        cursor.execute("""
+            SELECT v.viewing_id, v.property_id, v.unit_number, v.viewing_date,
+                   v.viewing_time, v.status, p.property_name, p.city,
+                   t.name AS tenant_name, t.email AS tenant_email
+            FROM viewing v
+            JOIN property p ON p.property_id = v.property_id
+            JOIN tenant t ON t.tenant_id = v.tenant_id
+            WHERE p.owner_id = %s
+            ORDER BY v.viewing_date DESC, v.viewing_time DESC
+        """, (profile['owner_id'],))
+        rows = cursor.fetchall()
+        for row in rows:
+            row['viewing_date'] = str(row['viewing_date'])
+            row['viewing_time'] = str(row['viewing_time'])
+        return {"status": "success", "data": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/owner/viewings/{viewing_id}/status")
+async def update_owner_viewing_status(viewing_id: str, request: Request,
+                                      owner: dict = Depends(get_owner_user)):
+    """Allow an owner to confirm, complete, or cancel a viewing on their property."""
+    data = await request.json()
+    new_status = (data.get('status') or '').strip()
+    allowed = ('Confirmed', 'Completed', 'Cancelled')
+    if new_status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(allowed)}")
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT owner_id FROM owner WHERE user_id = %s", (owner['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Owner profile not found")
+        # Verify the viewing belongs to one of this owner's properties
+        cursor.execute("""
+            SELECT v.viewing_id, v.status AS old_status
+            FROM viewing v JOIN property p ON p.property_id = v.property_id
+            WHERE v.viewing_id = %s AND p.owner_id = %s
+        """, (viewing_id, profile['owner_id']))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Viewing not found or access denied")
+        old_status = row['old_status']
+        cursor.execute("UPDATE viewing SET status = %s WHERE viewing_id = %s",
+                       (new_status, viewing_id))
+        conn.commit()
+        log_audit_action(owner['user_id'], 'UPDATE_VIEWING_STATUS', 'viewing',
+                         viewing_id, old_status, new_status, request.client.host)
+        return {"status": "success", "viewing_id": viewing_id, "new_status": new_status}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not update viewing status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Agent viewing management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/agent/viewings")
+def get_agent_viewings(agent: dict = Depends(get_agent_user)):
+    """Return all viewings for properties this agent has a listing for."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT agent_id FROM agent WHERE user_id = %s", (agent['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Agent profile not found")
+        cursor.execute("""
+            SELECT DISTINCT v.viewing_id, v.property_id, v.unit_number, v.viewing_date,
+                   v.viewing_time, v.status, p.property_name, p.city,
+                   t.name AS tenant_name, t.email AS tenant_email
+            FROM viewing v
+            JOIN property p ON p.property_id = v.property_id
+            JOIN advertised_as aa ON aa.property_id = p.property_id
+            JOIN listing l ON l.listing_id = aa.listing_id
+            JOIN tenant t ON t.tenant_id = v.tenant_id
+            WHERE l.agent_id = %s
+            ORDER BY v.viewing_date DESC, v.viewing_time DESC
+        """, (profile['agent_id'],))
+        rows = cursor.fetchall()
+        for row in rows:
+            row['viewing_date'] = str(row['viewing_date'])
+            row['viewing_time'] = str(row['viewing_time'])
+        return {"status": "success", "data": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/agent/viewings/{viewing_id}/status")
+async def update_agent_viewing_status(viewing_id: str, request: Request,
+                                      agent: dict = Depends(get_agent_user)):
+    """Allow an agent to confirm, complete, or cancel a viewing on their listed property."""
+    data = await request.json()
+    new_status = (data.get('status') or '').strip()
+    allowed = ('Confirmed', 'Completed', 'Cancelled')
+    if new_status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(allowed)}")
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT agent_id FROM agent WHERE user_id = %s", (agent['user_id'],))
+        profile = cursor.fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Agent profile not found")
+        # Verify the viewing belongs to a property this agent manages
+        cursor.execute("""
+            SELECT v.viewing_id, v.status AS old_status
+            FROM viewing v
+            JOIN advertised_as aa ON aa.property_id = v.property_id
+            JOIN listing l ON l.listing_id = aa.listing_id
+            WHERE v.viewing_id = %s AND l.agent_id = %s
+            LIMIT 1
+        """, (viewing_id, profile['agent_id']))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Viewing not found or access denied")
+        old_status = row['old_status']
+        cursor.execute("UPDATE viewing SET status = %s WHERE viewing_id = %s",
+                       (new_status, viewing_id))
+        conn.commit()
+        log_audit_action(agent['user_id'], 'UPDATE_VIEWING_STATUS', 'viewing',
+                         viewing_id, old_status, new_status, request.client.host)
+        return {"status": "success", "viewing_id": viewing_id, "new_status": new_status}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not update viewing status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.get("/api/admin/agents")
 def get_agents(admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
