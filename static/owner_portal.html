@@ -22,29 +22,131 @@
         .panel { padding:1.35rem; margin-bottom:1.5rem; } .panel h2 { color:#173b35; font-size:1.1rem; margin-bottom:1rem; }
         .table-wrap { overflow-x:auto; } table { width:100%; border-collapse:collapse; min-width:520px; } th,td { text-align:left; padding:.8rem .5rem; border-bottom:1px solid #e8efeb; } th { color:#6b817b; font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; } td { color:#294d45; }
         .status { display:inline-flex; padding:.25rem .55rem; border-radius:999px; background:#e2f2e9; color:#24704d; font-size:.75rem; font-weight:700; }
-        .empty { color:#78908a; padding:1rem 0; } .profile { display:grid; gap:.65rem; } .profile div { display:flex; justify-content:space-between; gap:1rem; border-bottom:1px solid #edf2ef; padding:.55rem 0; } .profile dt { color:#78908a; } .profile dd { color:#294d45; font-weight:700; text-align:right; }
+        .status-requested { background:#fef3e2; color:#b45309; }
+        .status-confirmed { background:#e2f2e9; color:#24704d; }
+        .status-completed { background:#e0effe; color:#1d5ab0; }
+        .status-cancelled { background:#fce8e8; color:#9b1c1c; }
+        .empty { color:#78908a; padding:1rem 0; }
+        .profile { display:grid; gap:.65rem; } .profile div { display:flex; justify-content:space-between; gap:1rem; border-bottom:1px solid #edf2ef; padding:.55rem 0; } .profile dt { color:#78908a; } .profile dd { color:#294d45; font-weight:700; text-align:right; }
         .verify { background:#fff8f0; border-color:#efd8bd; } .verify p { color:#735a43; font-size:.9rem; margin-bottom:1rem; } .verify label { display:block; color:#513c2d; font-weight:700; font-size:.85rem; margin:.8rem 0; } .verify input { display:block; width:100%; margin-top:.35rem; }
         button { border:0; border-radius:8px; background:#c66b3d; color:#fff; font-weight:800; padding:.7rem 1rem; cursor:pointer; } button:hover { background:#a9522e; } .message { margin-top:.8rem; color:#24704d; font-weight:700; }
+        .btn-sm { padding:.3rem .65rem; font-size:.78rem; border-radius:6px; margin-right:.3rem; }
+        .btn-confirm { background:#1d7a50; } .btn-confirm:hover { background:#155f3d; }
+        .btn-cancel  { background:#7c2d2d; } .btn-cancel:hover  { background:#5e2020; }
         @media (max-width:850px) { .portal-grid,.content-grid { grid-template-columns:1fr 1fr; } .content-grid { display:block; } }
         @media (max-width:560px) { .portal-grid { grid-template-columns:1fr 1fr; } .portal-intro { display:block; } .portal-nav { align-items:flex-start; } }
     </style>
 </head>
 <body class="portal">
-    <nav class="portal-nav"><a class="portal-brand" href="/">HOMEFIND / OWNER</a><div><a href="/properties.html">Browse</a> <button id="logout" type="button">Log out</button></div></nav>
-    <main class="portal-main">
-        <section class="portal-intro"><div><div class="eyebrow">Ownership desk</div><h1 id="welcome">Your property portfolio</h1><p>Track listings, enquiries, and verification status from one workspace.</p></div></section>
-        <section class="portal-grid"><div class="metric"><strong id="property-count">-</strong><span>Properties</span></div><div class="metric"><strong id="published-count">-</strong><span>Published</span></div><div class="metric"><strong id="view-count">-</strong><span>Total views</span></div><div class="metric"><strong id="inquiry-count">-</strong><span>Recent enquiries</span></div></section>
-        <div class="content-grid"><div><section class="panel"><h2>Portfolio</h2><div id="properties" class="table-wrap"></div></section><section class="panel"><h2>Recent enquiries</h2><div id="inquiries" class="table-wrap"></div></section></div><aside><section class="panel"><h2>Account</h2><dl id="profile" class="profile"></dl></section><section class="panel verify"><h2>Verification vault</h2><p>Owners must submit a face photo, both sides of national ID, and a land-title PDF.</p><form id="verification-form"><label>Face photo<input name="face_photo" type="file" accept="image/jpeg,image/png,image/webp" required></label><label>ID front<input name="national_id_front" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><label>ID back<input name="national_id_back" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><label>Land title PDF<input name="land_title" type="file" accept="application/pdf" required></label><button type="submit">Submit for review</button></form><div id="verify-message" class="message"></div></section></aside></div>
-    </main>
-    <script>
-        const token = localStorage.getItem('auth_token');
-        if (!token) location.href = 'login.html';
-        const headers = { Authorization: 'Bearer ' + token };
-        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-        async function load() { const response = await fetch('/api/owner/overview', { headers }); if (response.status === 401 || response.status === 403) { localStorage.removeItem('auth_token'); location.href='login.html'; return; } const result=await response.json(); if(result.status!=='success'){ throw new Error(result.detail || result.message); } const data=result.data; document.getElementById('welcome').textContent='Welcome, '+data.profile.name; document.getElementById('property-count').textContent=data.properties.length; document.getElementById('published-count').textContent=data.properties.filter(p=>p.property_status==='Published').length; document.getElementById('view-count').textContent=data.properties.reduce((sum,p)=>sum+(p.views||0),0); document.getElementById('inquiry-count').textContent=data.inquiries.length; document.getElementById('profile').innerHTML=`<div><dt>Name</dt><dd>${esc(data.profile.name)}</dd></div><div><dt>Email</dt><dd>${esc(data.profile.email)}</dd></div><div><dt>Documents</dt><dd>${data.documents.length} uploaded</dd></div>`; document.getElementById('properties').innerHTML=data.properties.length?`<table><thead><tr><th>Property</th><th>Location</th><th>Status</th><th>Views</th></tr></thead><tbody>${data.properties.map(p=>`<tr><td>${esc(p.property_name)}</td><td>${esc(p.city)}</td><td><span class="status">${esc(p.property_status)}</span></td><td>${p.views||0}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">No properties are assigned to this owner yet.</p>'; document.getElementById('inquiries').innerHTML=data.inquiries.length?`<table><thead><tr><th>Property</th><th>From</th><th>Status</th></tr></thead><tbody>${data.inquiries.map(i=>`<tr><td>${esc(i.property_name)}</td><td>${esc(i.email)}</td><td><span class="status">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>`:'<p class="empty">No enquiries yet.</p>'; }
-        document.getElementById('verification-form').addEventListener('submit', async event => { event.preventDefault(); const response=await fetch('/api/verification/documents',{method:'POST',headers,body:new FormData(event.target)}); const result=await response.json(); document.getElementById('verify-message').textContent=result.status==='success'?'Documents submitted for review.':(result.detail||result.message||'Upload failed.'); });
-        document.getElementById('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST',headers});localStorage.removeItem('auth_token');location.href='login.html';};
-        load().catch(error=>document.getElementById('properties').innerHTML=`<p class="empty">${esc(error.message)}</p>`);
-    </script>
+<nav class="portal-nav"><a class="portal-brand" href="/">HOMEFIND / OWNER</a><div><a href="/properties.html">Browse</a> <button id="logout" type="button">Log out</button></div></nav>
+<main class="portal-main">
+    <section class="portal-intro"><div><div class="eyebrow">Ownership desk</div><h1 id="welcome">Your property portfolio</h1><p>Track listings, enquiries, viewings, and verification status from one workspace.</p></div></section>
+    <section class="portal-grid">
+        <div class="metric"><strong id="property-count">-</strong><span>Properties</span></div>
+        <div class="metric"><strong id="published-count">-</strong><span>Published</span></div>
+        <div class="metric"><strong id="view-count">-</strong><span>Total views</span></div>
+        <div class="metric"><strong id="inquiry-count">-</strong><span>Recent enquiries</span></div>
+    </section>
+    <div class="content-grid">
+        <div>
+            <section class="panel"><h2>Portfolio</h2><div id="properties" class="table-wrap"></div></section>
+            <section class="panel"><h2>Recent enquiries</h2><div id="inquiries" class="table-wrap"></div></section>
+            <section class="panel"><h2>Scheduled viewings</h2><div id="viewings" class="table-wrap"></div></section>
+        </div>
+        <aside>
+            <section class="panel"><h2>Account</h2><dl id="profile" class="profile"></dl></section>
+            <section class="panel verify"><h2>Verification vault</h2><p>Owners must submit a face photo, both sides of national ID, and a land-title PDF.</p>
+                <form id="verification-form">
+                    <label>Face photo<input name="face_photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+                    <label>ID front<input name="national_id_front" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+                    <label>ID back<input name="national_id_back" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+                    <label>Land title PDF<input name="land_title" type="file" accept="application/pdf" required></label>
+                    <button type="submit">Submit for review</button>
+                </form>
+                <div id="verify-message" class="message"></div>
+            </section>
+        </aside>
+    </div>
+</main>
+<script>
+    const token = localStorage.getItem('auth_token');
+    if (!token) location.href = 'login.html';
+    const headers = { Authorization: 'Bearer ' + token };
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function statusClass(s) {
+        if (s === 'Requested') return 'status status-requested';
+        if (s === 'Confirmed') return 'status status-confirmed';
+        if (s === 'Completed') return 'status status-completed';
+        if (s === 'Cancelled') return 'status status-cancelled';
+        return 'status';
+    }
+
+    async function updateViewingStatus(viewingId, newStatus) {
+        const r = await fetch(`/api/owner/viewings/${encodeURIComponent(viewingId)}/status`, {
+            method: 'PUT',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+        const d = await r.json();
+        if (d.status !== 'success') throw new Error(d.detail || d.message || 'Update failed');
+        loadViewings();
+    }
+
+    async function loadViewings() {
+        const el = document.getElementById('viewings');
+        try {
+            const r = await fetch('/api/owner/viewings', { headers });
+            if (r.status === 401 || r.status === 403) { localStorage.removeItem('auth_token'); location.href = 'login.html'; return; }
+            const result = await r.json();
+            if (result.status !== 'success') throw new Error(result.detail || result.message);
+            const rows = result.data;
+            if (!rows.length) { el.innerHTML = '<p class="empty">No viewings have been requested for your properties yet.</p>'; return; }
+            el.innerHTML = `<table><thead><tr><th>Property</th><th>Unit</th><th>Date</th><th>Time</th><th>Tenant</th><th>Status</th><th>Actions</th></tr></thead><tbody>${
+                rows.map(v => {
+                    const actions = v.status === 'Requested'
+                        ? `<button class="btn-sm btn-confirm" data-id="${esc(v.viewing_id)}" data-action="Confirmed">Confirm</button><button class="btn-sm btn-cancel" data-id="${esc(v.viewing_id)}" data-action="Cancelled">Cancel</button>`
+                        : v.status === 'Confirmed'
+                        ? `<button class="btn-sm btn-confirm" data-id="${esc(v.viewing_id)}" data-action="Completed">Mark done</button><button class="btn-sm btn-cancel" data-id="${esc(v.viewing_id)}" data-action="Cancelled">Cancel</button>`
+                        : '&mdash;';
+                    return `<tr><td>${esc(v.property_name)}</td><td>${esc(v.unit_number)}</td><td>${esc(v.viewing_date)}</td><td>${esc(v.viewing_time)}</td><td title="${esc(v.tenant_email)}">${esc(v.tenant_name)}</td><td><span class="${statusClass(v.status)}">${esc(v.status)}</span></td><td>${actions}</td></tr>`;
+                }).join('')
+            }</tbody></table>`;
+            el.querySelectorAll('button[data-id]').forEach(btn => {
+                btn.addEventListener('click', () => updateViewingStatus(btn.dataset.id, btn.dataset.action).catch(e => alert(e.message)));
+            });
+        } catch(e) { el.innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+    }
+
+    async function load() {
+        const response = await fetch('/api/owner/overview', { headers });
+        if (response.status === 401 || response.status === 403) { localStorage.removeItem('auth_token'); location.href = 'login.html'; return; }
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.detail || result.message);
+        const data = result.data;
+        document.getElementById('welcome').textContent = 'Welcome, ' + data.profile.name;
+        document.getElementById('property-count').textContent = data.properties.length;
+        document.getElementById('published-count').textContent = data.properties.filter(p => p.property_status === 'Published').length;
+        document.getElementById('view-count').textContent = data.properties.reduce((s, p) => s + (p.views || 0), 0);
+        document.getElementById('inquiry-count').textContent = data.inquiries.length;
+        document.getElementById('profile').innerHTML = `<div><dt>Name</dt><dd>${esc(data.profile.name)}</dd></div><div><dt>Email</dt><dd>${esc(data.profile.email)}</dd></div><div><dt>Documents</dt><dd>${data.documents.length} uploaded</dd></div>`;
+        document.getElementById('properties').innerHTML = data.properties.length
+            ? `<table><thead><tr><th>Property</th><th>Location</th><th>Status</th><th>Views</th></tr></thead><tbody>${data.properties.map(p => `<tr><td>${esc(p.property_name)}</td><td>${esc(p.city)}</td><td><span class="status">${esc(p.property_status)}</span></td><td>${p.views || 0}</td></tr>`).join('')}</tbody></table>`
+            : '<p class="empty">No properties are assigned to this owner yet.</p>';
+        document.getElementById('inquiries').innerHTML = data.inquiries.length
+            ? `<table><thead><tr><th>Property</th><th>From</th><th>Status</th></tr></thead><tbody>${data.inquiries.map(i => `<tr><td>${esc(i.property_name)}</td><td>${esc(i.email)}</td><td><span class="status">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>`
+            : '<p class="empty">No enquiries yet.</p>';
+    }
+
+    document.getElementById('verification-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const r = await fetch('/api/verification/documents', { method: 'POST', headers, body: new FormData(event.target) });
+        const d = await r.json();
+        document.getElementById('verify-message').textContent = d.status === 'success' ? 'Documents submitted for review.' : (d.detail || d.message || 'Upload failed.');
+    });
+    document.getElementById('logout').onclick = async () => { await fetch('/api/logout', { method: 'POST', headers }); localStorage.removeItem('auth_token'); location.href = 'login.html'; };
+    load().catch(e => document.getElementById('properties').innerHTML = `<p class="empty">${esc(e.message)}</p>`);
+    loadViewings();
+</script>
 </body>
 </html>
