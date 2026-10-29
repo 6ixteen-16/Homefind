@@ -75,9 +75,10 @@
             <a href="admin_agents.html">Manage Agents</a>
             <a href="admin_listings.html">Manage Listings</a>
             <a href="admin_inquiries.html" class="active">Inquiries</a>
+            <a href="admin_verification.html">Owners &amp; Verification</a>
             <div style="margin-top: auto;">
                 <a href="index.html">← Back to Site</a>
-                <a href="#" onclick="logout()" style="color: #dc2626;">Logout</a>
+                <a href="login.html" onclick="logout(); return false;" style="color: #dc2626;">Logout</a>
             </div>
         </div>
 
@@ -265,8 +266,10 @@
         }
 
         function logout() {
+            const currentToken = localStorage.getItem('auth_token');
             localStorage.removeItem('auth_token');
-            window.location.href = 'login.html';
+            fetch('/api/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + currentToken } })
+                .finally(() => { window.location.href = 'login.html'; });
         }
 
         document.addEventListener('DOMContentLoaded', fetchInquiries);

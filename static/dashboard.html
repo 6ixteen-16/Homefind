@@ -51,12 +51,14 @@
 
         .stat-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 1.5rem;
             margin-bottom: 2rem;
         }
 
         .stat-card {
+            color: inherit;
+            text-decoration: none;
             background: var(--white);
             border-radius: 12px;
             padding: 1.5rem;
@@ -64,6 +66,31 @@
             border: 1px solid #e5e7eb;
             display: flex;
             flex-direction: column;
+            min-width: 0;
+            transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        }
+
+        .stat-card[href] {
+            cursor: pointer;
+        }
+
+        .stat-card[href]:hover,
+        .stat-card[href]:focus-visible {
+            transform: translateY(-5px);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+            border-color: var(--primary-color);
+        }
+
+        .stat-card[href]:focus-visible {
+            outline: 3px solid rgba(37, 99, 235, 0.35);
+            outline-offset: 3px;
+        }
+
+        .stat-card .card-action {
+            margin-top: 0.65rem;
+            color: var(--primary-color);
+            font-size: 0.75rem;
+            font-weight: 600;
         }
 
         .stat-card .icon-wrapper {
@@ -141,6 +168,29 @@
         }
         .badge-new { background: #fef3c7; color: #d97706; border-color: #fde68a; }
         .badge-read { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+
+        @media (max-width: 1100px) {
+            .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .content-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 700px) {
+            .admin-layout { display: block; }
+            .sidebar { width: auto; }
+            .main-content { padding: 1.25rem; }
+            .header-section { align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+        }
+
+        @media (max-width: 480px) {
+            .stat-grid { grid-template-columns: 1fr; gap: 1rem; }
+            .stat-card { padding: 1.25rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .stat-card { transition: none; }
+            .stat-card[href]:hover,
+            .stat-card[href]:focus-visible { transform: none; }
+        }
     </style>
 </head>
 <body>
@@ -154,10 +204,11 @@
             <a href="admin_agents.html">Manage Agents</a>
             <a href="admin_listings.html">Manage Listings</a>
             <a href="admin_inquiries.html">Inquiries</a>
+            <a href="admin_verification.html">Owners &amp; Verification</a>
             
             <div style="margin-top: auto;">
                 <a href="index.html">← Back to Site</a>
-                <a href="#" onclick="logout()" style="color: #dc2626;">Logout</a>
+                <a href="login.html" onclick="logout(); return false;" style="color: #dc2626;">Logout</a>
             </div>
         </div>
 
@@ -169,46 +220,50 @@
                     <h1 style="font-weight: 300; font-size: 2.2rem; margin-bottom: 0.5rem;">Welcome back, Admin</h1>
                     <p style="color: var(--text-muted);">Here's what's happening with your properties today.</p>
                 </div>
-                <a href="admin_listings.html" class="btn-primary" style="background: #d97706;">+ New Listing</a>
+                <a href="admin_listings.html?action=new" class="btn-primary" style="background: #d97706;">+ New Listing</a>
             </div>
 
             <!-- Stats Grid -->
             <div class="stat-grid">
-                <div class="stat-card blue">
+                <a class="stat-card blue" href="admin_listings.html" aria-label="View all listings">
                     <div class="icon-wrapper">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M16 6h.01"></path><path d="M12 6h.01"></path><path d="M12 10h.01"></path><path d="M12 14h.01"></path><path d="M16 10h.01"></path><path d="M16 14h.01"></path><path d="M8 10h.01"></path><path d="M8 14h.01"></path></svg>
                     </div>
                     <div class="value" id="val-total-listings">0</div>
                     <div class="label">Total Listings</div>
                     <div class="sub" id="sub-total-listings">0 active</div>
-                </div>
+                    <div class="card-action">View all listings →</div>
+                </a>
 
-                <div class="stat-card amber">
+                <a class="stat-card amber" href="admin_inquiries.html" aria-label="Review inquiries">
                     <div class="icon-wrapper">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                     </div>
                     <div class="value" id="val-new-inquiries">0</div>
                     <div class="label">New Inquiries</div>
                     <div class="sub" id="sub-new-inquiries">0 total</div>
-                </div>
+                    <div class="card-action">Review inquiries →</div>
+                </a>
 
-                <div class="stat-card green">
+                <a class="stat-card green" href="admin_listings.html?sort=views" aria-label="View listings sorted by views">
                     <div class="icon-wrapper">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                     </div>
                     <div class="value" id="val-total-views">0</div>
                     <div class="label">Total Views</div>
                     <div class="sub">across all listings</div>
-                </div>
+                    <div class="card-action">View listing view counts →</div>
+                </a>
 
-                <div class="stat-card purple">
+                <a class="stat-card purple" href="admin_listings.html?status=Published" aria-label="View active listings">
                     <div class="icon-wrapper">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
                     </div>
                     <div class="value" id="val-active-listings">0</div>
                     <div class="label">Active Listings</div>
                     <div class="sub" id="sub-active-listings">of 0 total</div>
-                </div>
+                    <div class="card-action">View active listings →</div>
+                </a>
             </div>
 
             <!-- Main Panels -->
@@ -241,7 +296,7 @@
                     <div class="panel">
                         <div class="panel-header">
                             <h2>Recent Activity</h2>
-                            <a href="#">Full log →</a>
+                            <a href="admin_audit.html">Full log →</a>
                         </div>
                         <div id="audit-list">
                             <div style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading...</div>
@@ -258,7 +313,9 @@
     <script src="esc.js"></script>
     <script>
         function logout() {
-            fetch('/api/logout', { method: 'POST' })
+            const token = localStorage.getItem('auth_token');
+            localStorage.removeItem('auth_token');
+            fetch('/api/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })
                 .finally(() => { window.location.href = 'login.html'; });
         }
 
@@ -340,7 +397,7 @@
                             <div class="list-item">
                                 <div style="font-family: monospace; font-size: 0.8rem; color: #9ca3af; width: 1.5rem;">${i + 1}</div>
                                 <div style="flex: 1; min-width: 0;">
-                                    <a href="property.html?id=${esc(encodeURIComponent(prop.property_id))}" style="font-weight: 500; font-size: 0.9rem; color: var(--text-color); text-decoration: none; display: block; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${esc(prop.property_name)}</a>
+                                    <a href="admin_listings.html?edit=${esc(encodeURIComponent(prop.property_id))}" style="font-weight: 500; font-size: 0.9rem; color: var(--text-color); text-decoration: none; display: block; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${esc(prop.property_name)}</a>
                                     <div style="font-size: 0.75rem; color: var(--text-muted);">Listed ${formatRelativeTime(prop.created_at)}</div>
                                 </div>
                                 <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.3rem;">

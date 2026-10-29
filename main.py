@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request, Response, Header, Depends, File, UploadFile, Form
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+import mimetypes
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -522,11 +523,12 @@ def get_property(id: str, request: Request, user: dict = Depends(get_current_use
         """, (id,))
         prop['units'] = cursor.fetchall()
 
-        # Count the view (public page views of published properties only).
-        if prop['property_status'] == 'Published' and not is_admin_preview:
-            cursor.execute("UPDATE property SET views = views + 1 WHERE property_id = %s", (id,))
+        # Count every visit to a published property's detail page.
+        if prop['property_status'] == 'Published':
+            cursor.execute("UPDATE property SET views = COALESCE(views, 0) + 1 WHERE property_id = %s", (id,))
+            cursor.execute("SELECT views FROM property WHERE property_id = %s", (id,))
+            prop['views'] = cursor.fetchone()['views']
             conn.commit()
-            prop['views'] = (prop.get('views') or 0) + 1
         if prop.get('created_at'):
             prop['created_at'] = str(prop['created_at'])
     finally:
@@ -1294,10 +1296,144 @@ def get_verification_documents(user_id: str, admin: dict = Depends(get_admin_use
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT document_id, user_id, document_type, file_path, uploaded_at, verified_at FROM identity_documents WHERE user_id = %s ORDER BY uploaded_at DESC",
+            "SELECT document_id, user_id, document_type, uploaded_at, verified_at FROM identity_documents WHERE user_id = %s ORDER BY uploaded_at DESC",
             (user_id,),
         )
-        return {"status": "success", "data": cursor.fetchall()}
+        documents = cursor.fetchall()
+        for document in documents:
+            if document.get('uploaded_at'):
+                document['uploaded_at'] = str(document['uploaded_at'])
+            if document.get('verified_at'):
+                document['verified_at'] = str(document['verified_at'])
+        return {"status": "success", "data": documents}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/verifications")
+def get_admin_verifications(admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT u.user_id, u.role, u.email, u.is_active, u.created_at,
+                   COALESCE(o.name, a.name) AS name, a.phone_number,
+                   COUNT(d.document_id) AS document_count,
+                   SUM(CASE WHEN d.verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified_count
+            FROM users u
+            LEFT JOIN owner o ON u.role = 'Owner' AND o.user_id = u.user_id
+            LEFT JOIN agent a ON u.role = 'Agent' AND a.user_id = u.user_id
+            LEFT JOIN identity_documents d ON d.user_id = u.user_id
+            WHERE u.role IN ('Owner', 'Agent')
+            GROUP BY u.user_id, u.role, u.email, u.is_active, u.created_at,
+                     o.name, a.name, a.phone_number
+            ORDER BY u.created_at DESC
+        """)
+        users = cursor.fetchall()
+        for user in users:
+            if user.get('created_at'):
+                user['created_at'] = str(user['created_at'])
+            user['document_count'] = int(user['document_count'] or 0)
+            user['verified_count'] = int(user['verified_count'] or 0)
+            user['verification_status'] = (
+                'Not submitted' if user['document_count'] == 0 else
+                'Verified' if user['verified_count'] == user['document_count'] else
+                'Pending'
+            )
+        return {"status": "success", "data": users}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/verification/{user_id}/documents/{document_id}")
+def get_verification_document(user_id: str, document_id: str, admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT file_path, document_type FROM identity_documents WHERE user_id = %s AND document_id = %s",
+            (user_id, document_id),
+        )
+        document = cursor.fetchone()
+        if not document:
+            raise HTTPException(status_code=404, detail="Verification document not found")
+        private_root = PRIVATE_UPLOAD_DIR.resolve()
+        document_path = Path(document['file_path']).resolve()
+        try:
+            document_path.relative_to(private_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Verification document not found") from exc
+        if not document_path.is_file():
+            raise HTTPException(status_code=404, detail="Verification document file is missing")
+        media_type = mimetypes.guess_type(document_path.name)[0] or "application/octet-stream"
+        return FileResponse(
+            document_path,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{document_path.name}"'},
+        )
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.put("/api/admin/verification/{user_id}")
+def verify_user_documents(user_id: str, request: Request, admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT role FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user or user['role'] not in ('Owner', 'Agent'):
+            raise HTTPException(status_code=404, detail="Owner or agent account not found")
+
+        required_documents = {'face_photo', 'national_id_front', 'national_id_back'}
+        if user['role'] == 'Owner':
+            required_documents.add('land_title')
+        cursor.execute("SELECT document_type FROM identity_documents WHERE user_id = %s", (user_id,))
+        submitted_documents = {row['document_type'] for row in cursor.fetchall()}
+        missing_documents = sorted(required_documents - submitted_documents)
+        if missing_documents:
+            return err("Missing required documents: " + ", ".join(missing_documents) + ".")
+
+        cursor.execute("UPDATE identity_documents SET verified_at = NOW() WHERE user_id = %s", (user_id,))
+        conn.commit()
+        log_audit_action(admin['user_id'], 'VERIFY_IDENTITY_DOCUMENTS', 'identity_documents', user_id, None, user['role'], request.client.host if request.client else None)
+        return {"status": "success", "message": "Documents verified"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not verify identity documents") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/audit_logs")
+def get_admin_audit_logs(admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT a.log_id, a.action, a.table_name, a.record_id, a.created_at,
+                   u.email AS user_email
+            FROM audit_logs a
+            LEFT JOIN users u ON a.user_id = u.user_id
+            ORDER BY a.created_at DESC
+            LIMIT 100
+        """)
+        logs = cursor.fetchall()
+        for log in logs:
+            if log.get('created_at'):
+                log['created_at'] = str(log['created_at'])
+        return {"status": "success", "data": logs}
     finally:
         cursor.close()
         conn.close()
