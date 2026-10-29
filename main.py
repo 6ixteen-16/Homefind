@@ -419,6 +419,13 @@ def write_listing_image(property_id, content, extension):
     (UPLOAD_DIR / filename).write_bytes(content)
     return filename
 
+def get_property_image_urls(cursor, property_id):
+    cursor.execute(
+        "SELECT url FROM property_media WHERE property_id = %s ORDER BY is_featured DESC, media_id ASC",
+        (property_id,),
+    )
+    return [row["url"] for row in cursor.fetchall()]
+
 def delete_upload_files(urls):
     """Delete uploaded image files that are no longer referenced by any property_media row."""
     base = UPLOAD_DIR.resolve()
