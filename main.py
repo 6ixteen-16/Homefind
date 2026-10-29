@@ -539,6 +539,8 @@ def authenticate(conn, cursor, email, password, ip):
     if not user:
         return None, INVALID_MESSAGE
     if not user.get('is_active', 1):
+        if user.get('role') == 'Tenant':
+            return None, "Please verify your email address before signing in. Check your inbox for the verification link."
         return None, "Your account is pending admin approval. You will be notified once it is activated."
 
     now = datetime.datetime.now()
@@ -596,7 +598,7 @@ def send_password_reset_email(email: str, reset_url: str) -> bool:
     if SMTP_HOST:
         try:
             message = EmailMessage()
-            message["Subject"] = "Homefind – Reset your password"
+            message["Subject"] = "Homefind - Reset your password"
             message["From"] = SMTP_FROM
             message["To"] = email
             message.set_content(
@@ -605,7 +607,7 @@ def send_password_reset_email(email: str, reset_url: str) -> bool:
                 f"Click the link below to choose a new password (expires in 1 hour):\n\n"
                 f"{reset_url}\n\n"
                 f"If you did not request this, you can safely ignore this email.\n\n"
-                f"– Homefind"
+                f"- Homefind"
             )
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
                 if SMTP_STARTTLS:
@@ -619,6 +621,37 @@ def send_password_reset_email(email: str, reset_url: str) -> bool:
             return False
     if APP_ENV != "production":
         print(f"[DEV ONLY] Password reset link for {email}: {reset_url}")
+        return True
+    return False
+
+
+def send_verification_email(email: str, name: str, verify_url: str) -> bool:
+    """E-mail an account verification link after registration. Returns True on success."""
+    if SMTP_HOST:
+        try:
+            message = EmailMessage()
+            message["Subject"] = "Homefind - Verify your email address"
+            message["From"] = SMTP_FROM
+            message["To"] = email
+            message.set_content(
+                f"Hi {name},\n\n"
+                f"Welcome to Homefind! Please click the link below to verify your email and activate your account:\n\n"
+                f"{verify_url}\n\n"
+                f"This link expires in 24 hours. If you did not create an account, you can ignore this email.\n\n"
+                f"- Homefind"
+            )
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+                if SMTP_STARTTLS:
+                    smtp.starttls()
+                if SMTP_USER:
+                    smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(message)
+            return True
+        except Exception as exc:
+            print(f"Could not send verification email: {exc!r}")
+            return False
+    if APP_ENV != "production":
+        print(f"[DEV ONLY] Email verification link for {email}: {verify_url}")
         return True
     return False
 
@@ -756,12 +789,12 @@ async def register(request: Request):
 
         user_id = "USR_" + uuid.uuid4().hex[:12]
         hashed  = hash_password(password)
-        # Tenants are activated immediately; other roles need admin approval.
-        auto_active = 1 if role == "Tenant" else 0
+        # All self-registered accounts start inactive:
+        # Tenants activate via email verification link; other roles need admin approval.
         cursor.execute("""
             INSERT INTO users (user_id, email, password_hash, role, is_active)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (user_id, email, hashed, role, auto_active))
+            VALUES (%s, %s, %s, %s, 0)
+        """, (user_id, email, hashed, role))
 
         if role == 'Tenant':
             tenant_id = "TEN_" + uuid.uuid4().hex[:12]
@@ -785,7 +818,20 @@ async def register(request: Request):
         conn.commit()
         log_audit_action(user_id, 'REGISTER', 'users', user_id, None, role, request.client.host)
         if role == "Tenant":
-            msg = "Account created. You can log in immediately."
+            # Send email verification link so tenant can activate their own account
+            ver_token = secrets.token_urlsafe(48)
+            ver_expires = datetime.datetime.now() + datetime.timedelta(hours=24)
+            try:
+                cursor.execute(
+                    "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (%s, %s, %s)",
+                    (ver_token, user_id, ver_expires)
+                )
+                conn.commit()
+            except Exception as ve:
+                print(f"Could not store verification token: {ve!r}")
+            verify_url = f"{APP_URL}/api/verify_email?token={ver_token}"
+            send_verification_email(email, name, verify_url)
+            msg = "Account created. Please check your email to verify your account before signing in."
         else:
             msg = "Account created. An admin will review and activate it shortly."
         return {"status": "success", "message": msg}
@@ -854,6 +900,43 @@ async def activate_user(user_id: str, request: Request,
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail="Could not update user status") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/verify_email")
+async def verify_email(token: str, request: Request):
+    """Activate a tenant account via the emailed verification link."""
+    if not token:
+        return RedirectResponse(url="/verify_email.html?error=invalid", status_code=302)
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT t.user_id, u.email, u.role, t.used, u.is_active, t.expires_at FROM password_reset_tokens t "
+            "JOIN users u ON u.user_id = t.user_id "
+            "WHERE t.token = %s",
+            (token,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return RedirectResponse(url="/verify_email.html?error=invalid", status_code=302)
+        if row.get("is_active") == 1:
+            return RedirectResponse(url="/verify_email.html?already_verified=1", status_code=302)
+        if row.get("used") == 1 or row["expires_at"] <= datetime.datetime.now():
+            return RedirectResponse(url="/verify_email.html?error=expired", status_code=302)
+        cursor.execute("UPDATE users SET is_active = 1 WHERE user_id = %s", (row["user_id"],))
+        cursor.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = %s", (token,))
+        conn.commit()
+        log_audit_action(row["user_id"], "EMAIL_VERIFIED", "users", row["user_id"], None, None,
+                         request.client.host if request.client else "unknown")
+        return RedirectResponse(url="/verify_email.html?success=1", status_code=302)
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "verify_email")
     finally:
         cursor.close()
         conn.close()
