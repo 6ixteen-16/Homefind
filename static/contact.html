@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contact Us - Homefinder</title>
-    <meta name="description" content="Get in touch with the Homefinder team for any inquiries about properties or services.">
+    <title>Contact Us - Homefind</title>
+    <meta name="description" content="Get in touch with the Homefind team for any inquiries about properties or services.">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,10 +14,9 @@
         <ul class="nav-links">
             <li><a href="index.html">Home</a></li>
             <li><a href="about.html">About Us</a></li>
-            <li><a href="properties.html">Properties</a></li>
             <li><a href="contact.html">Contact</a></li>
         </ul>
-        <a href="login.html" class="btn-primary">Sign In</a>
+        <a href="login.html" id="nav-auth-btn" class="btn-primary">Sign In</a>
     </nav>
 
     <div class="container" style="max-width: 700px; margin: 4rem auto;">
@@ -29,51 +28,39 @@
         </div>
         <div id="error-message" style="display:none; background: #fee2e2; color: #dc2626; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; text-align: center;"></div>
 
-        <div style="background: var(--white); padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07);">
+        <div style="background: var(--white); padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); border: 1px solid var(--border-color);">
             <form id="contact-form" style="display: flex; flex-direction: column; gap: 1.2rem;">
                 <div>
                     <label style="display:block; margin-bottom: 0.3rem; font-weight: 500;">Full Name</label>
-                    <input type="text" id="name" placeholder="Your full name" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem;">
+                    <input type="text" id="name" placeholder="Your full name" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem; box-sizing: border-box;">
                 </div>
                 <div>
                     <label style="display:block; margin-bottom: 0.3rem; font-weight: 500;">Email Address</label>
-                    <input type="email" id="email" placeholder="you@example.com" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem;">
+                    <input type="email" id="email" placeholder="you@example.com" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem; box-sizing: border-box;">
                 </div>
                 <div>
                     <label style="display:block; margin-bottom: 0.3rem; font-weight: 500;">Subject</label>
-                    <input type="text" id="subject" placeholder="What is this about?" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem;">
+                    <input type="text" id="subject" placeholder="What is this about?" required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem; box-sizing: border-box;">
                 </div>
                 <div>
                     <label style="display:block; margin-bottom: 0.3rem; font-weight: 500;">Message</label>
-                    <textarea id="message" rows="6" placeholder="Write your message here..." required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem; resize: vertical;"></textarea>
+                    <textarea id="message" rows="6" placeholder="Write your message here..." required style="width: 100%; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 1rem; resize: vertical; box-sizing: border-box;"></textarea>
                 </div>
-                <button type="submit" class="btn-primary" style="align-self: flex-start; padding: 0.75rem 2rem;">Send Message</button>
+                <button type="submit" class="btn-primary" style="align-self: flex-start; padding: 0.75rem 2rem; cursor: pointer;">Send Message</button>
             </form>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-top: 2.5rem; text-align: center;">
-            <div style="background: var(--white); padding: 1.5rem; border-radius: 8px;">
-
-                <strong>Address</strong>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.3rem;"><a href="https://maps.google.com/?q=Kampala,+Uganda" target="_blank" style="color: inherit; text-decoration: none;">Kampala, Uganda</a></p>
-            </div>
-            <div style="background: var(--white); padding: 1.5rem; border-radius: 8px;">
-
-                <strong>Phone</strong>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.3rem;"><a href="tel:+256700373070" style="color: inherit; text-decoration: none;">+256 700 373 070</a></p>
-            </div>
-            <div style="background: var(--white); padding: 1.5rem; border-radius: 8px;">
-
-                <strong>Email</strong>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.3rem;"><a href="mailto:info@homefind.com" style="color: inherit; text-decoration: none;">info@homefind.com</a></p>
-            </div>
         </div>
     </div>
 
     <script>
+        const authToken = localStorage.getItem('auth_token');
+        if (authToken) {
+            document.getElementById('nav-auth-btn').textContent = 'My Dashboard';
+            document.getElementById('nav-auth-btn').href = 'tenant_portal.html';
+        }
+
         document.getElementById('contact-form').addEventListener('submit', function(e) {
             e.preventDefault();
-
+            
             const data = {
                 name: document.getElementById('name').value,
                 email: document.getElementById('email').value,
@@ -97,7 +84,6 @@
                 }
             })
             .catch(() => {
-                // Even if API fails, show success (contact form is non-critical)
                 document.getElementById('success-message').style.display = 'block';
                 document.getElementById('contact-form').reset();
             });
