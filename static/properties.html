@@ -31,11 +31,18 @@
         </div>
     </div>
 
-    <!-- JavaScript to fetch data from the PHP API and insert it into HTML -->
+    <!-- JavaScript to fetch data from the API and insert it into HTML -->
+    <script src="esc.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             fetch('/api/get_properties')
-                .then(response => response.json())
+                .then(async response => {
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.detail || result.message || `Server returned HTTP ${response.status}`);
+                    }
+                    return result;
+                })
                 .then(result => {
                     const grid = document.getElementById('properties-grid');
                     grid.innerHTML = ''; // Clear loading text
@@ -55,18 +62,18 @@
                             
                             const cardHTML = `
                                 <div class="card">
-                                    <img src="${imageUrl}" alt="Property Image">
+                                    <img src="${esc(imageUrl)}" alt="Property Image">
                                     <div class="card-body">
-                                        <h3 class="card-title">${prop.property_name}</h3>
-                                        <div class="card-price">${prop.currency || 'USD'} ${parseFloat(prop.price).toLocaleString()}</div>
-                                        <div style="color:var(--text-muted); margin:.35rem 0;">${prop.location || prop.city || ''}${prop.country ? ', ' + prop.country : ''}</div>
+                                        <h3 class="card-title">${esc(prop.property_name)}</h3>
+                                        <div class="card-price">${esc(prop.currency || 'USD')} ${parseFloat(prop.price).toLocaleString()}</div>
+                                        <div style="color:var(--text-muted); margin:.35rem 0;">${esc(prop.location || prop.city || '')}${prop.country ? ', ' + esc(prop.country) : ''}</div>
                                         <div class="card-details">
-                                            <span>${bedrooms} Beds</span> &bull; 
-                                            <span>${bathrooms} Baths</span> &bull; 
-                                            <span>${sqft} sqft</span>
+                                            <span>${esc(bedrooms)} Beds</span> &bull; 
+                                            <span>${esc(bathrooms)} Baths</span> &bull; 
+                                            <span>${esc(sqft)} sqft</span>
                                         </div>
-                                        <div style="color:var(--text-muted); margin:.35rem 0;">${prop.amenities || 'Property amenities available on details page'}</div>
-                                        <a href="property.html?id=${prop.property_id}" class="btn-primary" style="display: block; text-align: center;">View Details</a>
+                                        <div style="color:var(--text-muted); margin:.35rem 0;">${esc(prop.amenities || 'Property amenities available on details page')}</div>
+                                        <a href="property.html?id=${esc(encodeURIComponent(prop.property_id))}" class="btn-primary" style="display: block; text-align: center;">View Details</a>
                                     </div>
                                 </div>
                             `;
@@ -74,12 +81,14 @@
                         });
                     } else {
                         document.getElementById('error-message').style.display = 'block';
-                        document.getElementById('error-message').innerText = "Error loading properties: " + result.message;
+                        document.getElementById('error-message').innerText = "Error loading properties: " + (result.detail || result.message || "The server could not load properties.");
                     }
                 })
                 .catch(error => {
                     console.error('Error fetching properties:', error);
-                    document.getElementById('properties-grid').innerHTML = '<p style="text-align: center; color: red; grid-column: 1 / -1;">Failed to connect to the server.</p>';
+                    document.getElementById('error-message').style.display = 'block';
+                    document.getElementById('error-message').innerText = "Error loading properties: " + (error.message || "Failed to connect to the server.");
+                    document.getElementById('properties-grid').innerHTML = '';
                 });
         });
     </script>

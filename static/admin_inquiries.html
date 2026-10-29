@@ -92,8 +92,12 @@
                     <select id="status-filter" onchange="fetchInquiries()" style="padding: 0.4rem 0.8rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
                         <option value="">All</option>
                         <option value="NEW">New</option>
+<<<<<<< HEAD
                         <option value="IN_PROGRESS">In progress</option>
                         <option value="RESOLVED">Resolved</option>
+=======
+                        <option value="READ">Read</option>
+>>>>>>> origin/dhaev
                         <option value="CLOSED">Closed</option>
                     </select>
                 </div>
@@ -132,7 +136,9 @@
         </div>
     </div>
 
+    <script src="esc.js"></script>
     <script>
+
         const token = localStorage.getItem('auth_token');
         if (!token) window.location.href = 'login.html';
         const apiHeaders = { 'Authorization': 'Bearer ' + token };
@@ -146,6 +152,8 @@
             return Math.floor(diff/86400) + 'd ago';
         }
 
+        let inquiryCache = {};
+
         function fetchInquiries() {
             const filter = document.getElementById('status-filter').value;
             fetch('/api/admin/inquiries', { headers: apiHeaders })
@@ -153,10 +161,13 @@
                 .then(res => {
                     const container = document.getElementById('inquiries-container');
                     if (res.status !== 'success') {
-                        container.innerHTML = `<div class="empty-state">Error loading inquiries: ${res.message}</div>`;
+                        container.innerHTML = `<div class="empty-state">Error loading inquiries: ${esc(res.message)}</div>`;
                         return;
                     }
                     let data = res.data;
+                    inquiryCache = {};
+                    data.forEach(i => { inquiryCache[i.inquiry_id] = i; });
+
                     if (filter) data = data.filter(i => i.status === filter);
                     if (data.length === 0) {
                         container.innerHTML = '<div class="empty-state">No inquiries found.</div>';
@@ -164,44 +175,56 @@
                     }
                     container.innerHTML = data.map(inq => {
                         const badge = inq.status === 'NEW' ? 'badge-new' : inq.status === 'CLOSED' ? 'badge-closed' : 'badge-read';
-                        const phone = inq.phone ? `<a href="tel:${inq.phone}" class="contact-link phone">${inq.phone}</a>` : '';
+                        const phone = inq.phone ? `<a href="tel:${esc(inq.phone)}" class="contact-link phone">${esc(inq.phone)}</a>` : '';
                         return `
                         <div class="inquiry-card">
                             <div class="inquiry-header">
                                 <div class="sender-info">
-                                    <div class="avatar">${inq.name.charAt(0).toUpperCase()}</div>
+                                    <div class="avatar">${esc(inq.name.charAt(0).toUpperCase())}</div>
                                     <div>
-                                        <div style="font-weight: 600; font-size: 0.95rem;">${inq.name}</div>
+                                        <div style="font-weight: 600; font-size: 0.95rem;">${esc(inq.name)}</div>
                                         <div class="contact-links">
-                                            <a href="mailto:${inq.email}" class="contact-link">${inq.email}</a>
+                                            <a href="mailto:${esc(inq.email)}" class="contact-link">${esc(inq.email)}</a>
                                             ${phone}
                                         </div>
                                     </div>
                                 </div>
-                                <span class="badge ${badge}">${inq.status}</span>
+                                <span class="badge ${badge}">${esc(inq.status)}</span>
                             </div>
 
-                            <div class="inquiry-message">${inq.message}</div>
+                            <div class="inquiry-message">${esc(inq.message)}</div>
 
                             <div class="inquiry-footer">
                                 <div class="inquiry-meta">
-                                    ${inq.property_name ? `<span>Re: ${inq.property_name}</span>` : ''}
-                                    <span>${formatRelativeTime(inq.created_at)}</span>
+                                    ${inq.property_name ? `<span>Re: ${esc(inq.property_name)}</span>` : ''}
+                                    <span>${esc(formatRelativeTime(inq.created_at))}</span>
                                 </div>
                                 <div class="inquiry-actions">
-                                    ${inq.status === 'NEW' ? `<button class="btn-sm" onclick="markStatus('${inq.inquiry_id}', 'IN_PROGRESS')">Start handling</button>` : ''}
-                                    ${inq.status === 'IN_PROGRESS' ? `<button class="btn-sm" onclick="markStatus('${inq.inquiry_id}', 'RESOLVED')">Resolve</button>` : ''}
-                                    ${inq.status !== 'CLOSED' ? `<button class="btn-sm danger" onclick="markStatus('${inq.inquiry_id}', 'CLOSED')">Close</button>` : ''}
-                                    <button class="btn-sm primary" onclick="openReply('${inq.inquiry_id}', '${inq.name}', '${inq.email}', '${(inq.property_name||'').replace(/'/g,'')}', '${inq.message.replace(/'/g,'').substring(0,80)}')">Reply</button>
+                                    ${inq.status === 'NEW' ? `<button class="btn-sm" data-action="in_progress" data-id="${esc(inq.inquiry_id)}">Start handling</button>` : ''}
+                                    ${inq.status === 'IN_PROGRESS' ? `<button class="btn-sm" data-action="resolved" data-id="${esc(inq.inquiry_id)}">Resolve</button>` : ''}
+                                    ${inq.status !== 'CLOSED' ? `<button class="btn-sm danger" data-action="close" data-id="${esc(inq.inquiry_id)}">Close</button>` : ''}
+                                    <button class="btn-sm primary" data-action="reply" data-id="${esc(inq.inquiry_id)}">Reply</button>
                                 </div>
                             </div>
                         </div>`;
                     }).join('');
+
                 });
         }
 
+        // Buttons carry only the inquiry id; the data is looked up in inquiryCache (never inside inline JavaScript strings).
+        document.getElementById('inquiries-container').addEventListener('click', function(e) {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const id = btn.dataset.id;
+            if (btn.dataset.action === 'in_progress') markStatus(id, 'IN_PROGRESS');
+            else if (btn.dataset.action === 'resolved') markStatus(id, 'RESOLVED');
+            else if (btn.dataset.action === 'close') markStatus(id, 'CLOSED');
+            else if (btn.dataset.action === 'reply' && inquiryCache[id]) openReply(inquiryCache[id]);
+        });
+
         function markStatus(id, status) {
-            fetch(`/api/admin/inquiries/${id}/status`, {
+            fetch(`/api/admin/inquiries/${encodeURIComponent(id)}/status`, {
                 method: 'PUT',
                 headers: { ...apiHeaders, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status })
@@ -211,15 +234,23 @@
             });
         }
 
-        function openReply(id, name, email, propertyName, excerpt) {
-            document.getElementById('reply-to').value = email;
-            document.getElementById('reply-subject').value = propertyName ? `Re: Inquiry about ${propertyName}` : 'Re: Your Inquiry to Homefind';
-            document.getElementById('reply-message').value = `Dear ${name},\n\nThank you for reaching out to Homefind.\n\n`;
-            document.getElementById('reply-context').innerHTML = `<strong>From:</strong> ${name} (${email})<br><strong>Message:</strong> ${excerpt}${excerpt.length >= 80 ? '...' : ''}`;
+        function openReply(inq) {
+            const excerpt = String(inq.message || '').substring(0, 80);
+            document.getElementById('reply-to').value = inq.email;
+            document.getElementById('reply-subject').value = inq.property_name ? `Re: Inquiry about ${inq.property_name}` : 'Re: Your Inquiry to Homefind';
+            document.getElementById('reply-message').value = `Dear ${inq.name},\n\nThank you for reaching out to Homefind.\n\n`;
+            // Build the context box with DOM nodes + textContent so message text can never become HTML.
+            const ctx = document.getElementById('reply-context');
+            ctx.textContent = '';
+            const from = document.createElement('strong'); from.textContent = 'From:';
+            const msg = document.createElement('strong'); msg.textContent = 'Message:';
+            ctx.append(from, ` ${inq.name} (${inq.email})`, document.createElement('br'),
+                       msg, ` ${excerpt}${String(inq.message || '').length > 80 ? '...' : ''}`);
             document.getElementById('reply-modal').style.display = 'flex';
-            // Auto-mark as read
-            markStatus(id, 'IN_PROGRESS');
+            // Auto-mark as in progress
+            markStatus(inq.inquiry_id, 'IN_PROGRESS');
         }
+
 
         function closeReplyModal() {
             document.getElementById('reply-modal').style.display = 'none';

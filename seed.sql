@@ -106,10 +106,10 @@ INSERT IGNORE INTO property (property_id, property_name, description, street, di
 ('P010', 'Nyali Beach House', 'Beautiful beachfront house on the North Coast. Ideal for holiday or long-term rental.', 'Links Road', 'Nyali', 'Mombasa', 'Kenya', 'Published', 180000.00, 1, 'O001');
 
 INSERT IGNORE INTO rental_house (property_id, house_size, yard_size) VALUES
-('P007', 'Large - 4500 sqft', '0.5 Acres'),
-('P008', 'Large - 3800 sqft', '0.25 Acres'),
-('P009', 'Medium - 1600 sqft', 'Small Garden'),
-('P010', 'Large - 3200 sqft', 'Beachfront Garden');
+('P007', 4500, 0.50),
+('P008', 3800, 0.25),
+('P009', 1600, 0.02),
+('P010', 3200, 0.15);
 
 INSERT IGNORE INTO unit (property_id, unit_number, floor, bedrooms, bathrooms, square_footage, monthly_rent, availability_status) VALUES
 ('P007', 'MAIN', 1, 5, 4, 4500, 250000, 'Available'),
@@ -125,13 +125,57 @@ INSERT IGNORE INTO property_media (media_id, property_id, url, type, is_featured
 ('M013', 'P010', 'https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1);
 
 -- ==============================================================================
+-- ADDITIONAL PUBLISHED HOMES (6 properties)
+-- ==============================================================================
+
+INSERT IGNORE INTO property (property_id, property_name, description, street, district, city, country, property_status, price, is_featured, owner_id) VALUES
+('P011', 'Kilimani Court Apartments', 'Bright modern apartments with a residents lounge, backup power, and secure parking.', 'Lenana Road', 'Kilimani', 'Nairobi', 'Kenya', 'Published', 72000.00, 1, 'O001'),
+('P012', 'Syokimau Garden Flats', 'Family-friendly homes close to the commuter rail, schools, and neighborhood shopping.', 'Katani Road', 'Syokimau', 'Machakos', 'Kenya', 'Published', 48000.00, 0, 'O001'),
+('P013', 'Riverside Terraces', 'Spacious contemporary condominiums with landscaped grounds and a shared swimming pool.', 'Riverside Drive', 'Riverside', 'Nairobi', 'Kenya', 'Published', 14200000.00, 1, 'O001'),
+('P014', 'Kileleshwa Park Residences', 'Secure gated residences with a gym, children''s play area, and generator backup.', 'Othaya Road', 'Kileleshwa', 'Nairobi', 'Kenya', 'Published', 8900000.00, 0, 'O001'),
+('P015', 'Lavington Garden House', 'Three-bedroom family home with a private garden, staff quarters, and covered parking.', 'Mbaazi Road', 'Lavington', 'Nairobi', 'Kenya', 'Published', 165000.00, 1, 'O001'),
+('P016', 'Mtwapa Coastal Home', 'Airy coastal home with a shaded veranda, private yard, and easy access to the beach.', 'Mtwapa Creek Road', 'Mtwapa', 'Kilifi', 'Kenya', 'Published', 95000.00, 0, 'O001');
+
+INSERT IGNORE INTO apartment (property_id, number_of_units, amenities) VALUES
+('P011', 32, 'Residents Lounge, Backup Generator, Secure Parking, CCTV'),
+('P012', 24, 'Children''s Play Area, Borehole Water, Secure Parking');
+
+INSERT IGNORE INTO condominium (property_id, amenities, management_fee) VALUES
+('P013', 'Swimming Pool, Landscaped Gardens, Gym, Backup Generator', 18000.00),
+('P014', 'Gym, Children''s Play Area, Generator Backup, 24hr Security', 12500.00);
+
+INSERT IGNORE INTO rental_house (property_id, house_size, yard_size) VALUES
+('P015', 2800, 0.12),
+('P016', 2100, 0.20);
+
+INSERT IGNORE INTO unit (property_id, unit_number, floor, bedrooms, bathrooms, square_footage, monthly_rent, availability_status) VALUES
+('P011', 'G1', 3, 2, 2, 1050, 72000, 'Available'),
+('P012', 'H1', 1, 2, 2, 850, 48000, 'Available'),
+('P013', 'J1', 5, 3, 3, 2300, 145000, 'Available'),
+('P014', 'K1', 2, 2, 2, 1600, 89000, 'Available'),
+('P015', 'MAIN', 1, 3, 3, 2800, 165000, 'Available'),
+('P016', 'MAIN', 1, 3, 2, 2100, 95000, 'Available');
+
+INSERT IGNORE INTO property_media (media_id, property_id, url, type, is_featured) VALUES
+('M014', 'P011', 'https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1),
+('M015', 'P012', 'https://images.unsplash.com/photo-1560185008-b033106af5c3?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1),
+('M016', 'P013', 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1),
+('M017', 'P014', 'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1),
+('M018', 'P015', 'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1),
+('M019', 'P016', 'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&q=80&w=800', 'IMAGE', 1);
+
+-- ==============================================================================
 -- LISTINGS (linking agent to properties)
 -- ==============================================================================
 INSERT IGNORE INTO listing (listing_id, date_listed, description, listing_status, agent_id) VALUES
 ('L001', '2026-01-15', 'Prime Nairobi apartments and condos for rent.', 'Active', 'AG001'),
-('L002', '2026-03-01', 'Exclusive Karen and Runda villa rentals.', 'Active', 'AG001');
+('L002', '2026-03-01', 'Exclusive Karen and Runda villa rentals.', 'Active', 'AG001'),
+('L003', '2026-05-12', 'New apartments and family homes across Nairobi and Machakos.', 'Active', 'AG001'),
+('L004', '2026-06-04', 'Coastal homes and city condominiums for rent.', 'Active', 'AG001');
 
 INSERT IGNORE INTO advertised_as (listing_id, property_id) VALUES
 ('L001', 'P001'), ('L001', 'P002'), ('L001', 'P003'),
 ('L001', 'P004'), ('L001', 'P005'), ('L001', 'P006'),
-('L002', 'P007'), ('L002', 'P008'), ('L002', 'P009'), ('L002', 'P010');
+('L002', 'P007'), ('L002', 'P008'), ('L002', 'P009'), ('L002', 'P010'),
+('L003', 'P011'), ('L003', 'P012'), ('L003', 'P014'), ('L003', 'P015'),
+('L004', 'P013'), ('L004', 'P016');

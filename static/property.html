@@ -17,6 +17,7 @@
         .unit-list { margin-top:1rem; display:grid; gap:.5rem; }
         .unit-row { display:flex; justify-content:space-between; gap:1rem; padding:.65rem; background:#f6f8fa; border-radius:6px; }
     </style>
+
 </head>
 <body>
 
@@ -44,6 +45,7 @@
                 <div class="property-meta" id="prop-meta"></div>
             </div>
 
+
             <div class="property-images" id="prop-images">
                 <!-- Images inserted via JS -->
             </div>
@@ -64,6 +66,7 @@
                     <div class="amenities"><h3>Amenities</h3><p id="prop-amenities" style="margin-top:.5rem; color:var(--text-muted);">None listed</p></div>
                     <div class="amenities"><h3>Units</h3><div id="prop-units" class="unit-list"></div></div>
                 </div>
+
                 
                 <div style="background: var(--white); padding: 2rem; border-radius: 8px;">
                     <h3>Inquire About This Property</h3>
@@ -82,7 +85,9 @@
         
     </div>
 
+    <script src="esc.js"></script>
     <script>
+
         document.addEventListener('DOMContentLoaded', function() {
             // Get ID from URL e.g. property.html?id=P001
             const urlParams = new URLSearchParams(window.location.search);
@@ -95,7 +100,10 @@
                 return;
             }
             
-            fetch(`/api/get_property?id=${propertyId}`)
+            // An admin who is signed in can preview unpublished properties; everyone else gets the public view.
+            const authToken = localStorage.getItem('auth_token');
+            fetch(`/api/get_property?id=${encodeURIComponent(propertyId)}`, authToken ? { headers: { 'Authorization': 'Bearer ' + authToken } } : undefined)
+
                 .then(response => response.json())
                 .then(result => {
                     document.getElementById('loading-message').style.display = 'none';
@@ -109,7 +117,8 @@
                         document.getElementById('prop-price').innerText = `${p.currency || 'USD'} ${parseFloat(p.price).toLocaleString()}`;
                         document.getElementById('prop-address').innerText = `${p.street || ''}, ${p.city || ''}, ${p.country || ''}`;
                         const meta = document.getElementById('prop-meta');
-                        meta.innerHTML = `<span class="meta-pill">${p.property_status || 'Unlisted'}</span><span class="meta-pill">${p.views || 0} views</span>${p.location ? `<span class="meta-pill">${p.location}</span>` : ''}${p.latitude && p.longitude ? `<a class="meta-pill map-link" href="https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}" target="_blank" rel="noopener">Open map</a>` : ''}`;
+                        meta.innerHTML = `<span class="meta-pill">${esc(p.property_status || 'Unlisted')}</span><span class="meta-pill">${esc(p.views || 0)} views</span>${p.location ? `<span class="meta-pill">${esc(p.location)}</span>` : ''}${p.latitude && p.longitude ? `<a class="meta-pill map-link" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(p.latitude)}&mlon=${encodeURIComponent(p.longitude)}" target="_blank" rel="noopener">Open map</a>` : ''}`;
+
                         document.getElementById('prop-desc').innerText = p.description;
                         
                         document.getElementById('prop-beds').innerText = p.bedrooms || 'N/A';
@@ -118,7 +127,8 @@
                         document.getElementById('prop-status').innerText = p.availability_status || p.property_status;
                         document.getElementById('prop-owner').innerText = p.owner_name;
                         document.getElementById('prop-amenities').innerText = p.amenities || 'None listed';
-                        document.getElementById('prop-units').innerHTML = (p.units || []).length ? p.units.map(unit => `<div class="unit-row"><span>${unit.unit_number} · ${unit.bedrooms || 0} beds · ${unit.bathrooms || 0} baths</span><strong>${unit.availability_status || 'Available'}</strong></div>`).join('') : '<p style="color:var(--text-muted);">Unit details unavailable.</p>';
+                        document.getElementById('prop-units').innerHTML = (p.units || []).length ? p.units.map(unit => `<div class="unit-row"><span>${esc(unit.unit_number)} · ${esc(unit.bedrooms || 0)} beds · ${esc(unit.bathrooms || 0)} baths</span><strong>${esc(unit.availability_status || 'Available')}</strong></div>`).join('') : '<p style="color:var(--text-muted);">Unit details unavailable.</p>';
+
                         
                         document.getElementById('form-prop-id').value = p.property_id;
                         
@@ -126,7 +136,8 @@
                         const imgContainer = document.getElementById('prop-images');
                         if (p.media && p.media.length > 0) {
                             p.media.forEach(img => {
-                                imgContainer.innerHTML += `<img src="${img.url}" alt="Property Image">`;
+                                imgContainer.innerHTML += `<img src="${esc(img.url)}" alt="Property Image">`;
+
                             });
                         }
                         
