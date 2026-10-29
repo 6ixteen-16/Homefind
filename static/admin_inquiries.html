@@ -92,7 +92,8 @@
                     <select id="status-filter" onchange="fetchInquiries()" style="padding: 0.4rem 0.8rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
                         <option value="">All</option>
                         <option value="NEW">New</option>
-                        <option value="READ">Read</option>
+                        <option value="IN_PROGRESS">In progress</option>
+                        <option value="RESOLVED">Resolved</option>
                         <option value="CLOSED">Closed</option>
                     </select>
                 </div>
@@ -162,7 +163,7 @@
                         return;
                     }
                     container.innerHTML = data.map(inq => {
-                        const badge = inq.status === 'NEW' ? 'badge-new' : inq.status === 'READ' ? 'badge-read' : 'badge-closed';
+                        const badge = inq.status === 'NEW' ? 'badge-new' : inq.status === 'CLOSED' ? 'badge-closed' : 'badge-read';
                         const phone = inq.phone ? `<a href="tel:${inq.phone}" class="contact-link phone">${inq.phone}</a>` : '';
                         return `
                         <div class="inquiry-card">
@@ -188,7 +189,8 @@
                                     <span>${formatRelativeTime(inq.created_at)}</span>
                                 </div>
                                 <div class="inquiry-actions">
-                                    ${inq.status === 'NEW' ? `<button class="btn-sm" onclick="markStatus('${inq.inquiry_id}', 'READ')">Mark as Read</button>` : ''}
+                                    ${inq.status === 'NEW' ? `<button class="btn-sm" onclick="markStatus('${inq.inquiry_id}', 'IN_PROGRESS')">Start handling</button>` : ''}
+                                    ${inq.status === 'IN_PROGRESS' ? `<button class="btn-sm" onclick="markStatus('${inq.inquiry_id}', 'RESOLVED')">Resolve</button>` : ''}
                                     ${inq.status !== 'CLOSED' ? `<button class="btn-sm danger" onclick="markStatus('${inq.inquiry_id}', 'CLOSED')">Close</button>` : ''}
                                     <button class="btn-sm primary" onclick="openReply('${inq.inquiry_id}', '${inq.name}', '${inq.email}', '${(inq.property_name||'').replace(/'/g,'')}', '${inq.message.replace(/'/g,'').substring(0,80)}')">Reply</button>
                                 </div>
@@ -216,7 +218,7 @@
             document.getElementById('reply-context').innerHTML = `<strong>From:</strong> ${name} (${email})<br><strong>Message:</strong> ${excerpt}${excerpt.length >= 80 ? '...' : ''}`;
             document.getElementById('reply-modal').style.display = 'flex';
             // Auto-mark as read
-            markStatus(id, 'READ');
+            markStatus(id, 'IN_PROGRESS');
         }
 
         function closeReplyModal() {
