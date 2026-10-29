@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Owners &amp; Verification - Homefind Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .admin-layout { display: flex; min-height: 100vh; }
+        .sidebar { width: 250px; background: var(--white); border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 1.5rem; flex-shrink: 0; }
+        .main-content { flex: 1; padding: 2rem; background: var(--background); overflow-x: auto; }
+        .sidebar a { display: block; padding: 0.75rem 1rem; color: var(--text-color); text-decoration: none; border-radius: 8px; margin-bottom: 0.5rem; font-weight: 500; }
+        .sidebar a:hover, .sidebar a.active { background: #f3f4f6; color: var(--primary-color); }
+        .panel { background: var(--white); border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; }
+        .header-section { margin-bottom: 2rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: middle; }
+        th { background: #f9fafb; color: var(--text-muted); font-size: 0.85rem; }
+        td { font-size: 0.9rem; }
+        .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.4rem; }
+        .action-btn { padding: 0.4rem 0.65rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }
+        .action-btn.primary { color: white; background: #d97706; border-color: #d97706; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; background: #f3f4f6; font-size: 0.75rem; }
+        .modal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(0,0,0,0.5); z-index: 50; }
+        .modal { width: min(760px, 100%); max-height: 90vh; overflow-y: auto; padding: 1.5rem; border-radius: 12px; background: white; }
+        .document-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; }
+        #document-preview { margin-top: 1rem; }
+        #document-preview img, #document-preview iframe { width: 100%; height: 65vh; object-fit: contain; border: 0; }
+        @media (max-width: 760px) {
+            .admin-layout { display: block; }
+            .sidebar { width: auto; }
+            .main-content { padding: 1rem; }
+            .panel { overflow-x: auto; }
+            table { min-width: 800px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-layout">
+        <nav class="sidebar">
+            <h2 style="margin: 0 0 2rem; color: var(--primary-color);">Homefind Admin</h2>
+            <a href="dashboard.html">Dashboard</a>
+            <a href="admin_agents.html">Manage Agents</a>
+            <a href="admin_listings.html">Manage Listings</a>
+            <a href="admin_inquiries.html">Inquiries</a>
+            <a href="admin_verification.html" class="active">Owners &amp; Verification</a>
+            <div style="margin-top: auto;">
+                <a href="index.html">← Back to Site</a>
+                <a href="login.html" onclick="logout(); return false;" style="color: #dc2626;">Logout</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header-section">
+                <h1 style="font-weight: 300; font-size: 2.2rem; margin-bottom: 0.5rem;">Owners &amp; Verification</h1>
+                <p style="color: var(--text-muted);">Review Owner and Agent accounts, inspect submitted documents, and verify identities.</p>
+            </header>
+            <div class="panel">
+                <table id="verifications-table">
+                    <thead>
+                        <tr>
+                            <th>Name / Role</th>
+                            <th>Email</th>
+                            <th>Account</th>
+                            <th>Identity</th>
+                            <th>Documents</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="6" style="text-align: center;">Loading accounts...</td></tr></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="documents-modal" role="dialog" aria-modal="true" aria-labelledby="documents-title">
+        <section class="modal">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+                <h2 id="documents-title">Verification documents</h2>
+                <button class="action-btn" type="button" onclick="closeDocuments()">Close</button>
+            </div>
+            <div id="documents-list"></div>
+            <div id="document-preview"></div>
+        </section>
+    </div>
+
+    <script src="esc.js"></script>
+    <script>
+        const token = localStorage.getItem('auth_token');
+        if (!token) window.location.href = 'login.html';
+        const apiHeaders = { Authorization: 'Bearer ' + token };
+        let currentPreviewUrl = null;
+
+        async function apiRequest(url, options = {}) {
+            const response = await fetch(url, { ...options, headers: { ...apiHeaders, ...(options.headers || {}) } });
+            if (response.status === 401 || response.status === 403) {
+                localStorage.removeItem('auth_token');
+                window.location.href = 'login.html';
+                throw new Error('Your admin session has expired.');
+            }
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.detail || result.message || 'The request could not be completed.');
+            }
+            return result;
+        }
+
+        async function loadVerifications() {
+            const tbody = document.querySelector('#verifications-table tbody');
+            try {
+                const result = await apiRequest('/api/admin/verifications');
+                if (!result.data.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No Owner or Agent accounts found.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = result.data.map(user => {
+                    const accountStatus = user.is_active ? 'Active' : 'Awaiting activation';
+                    const documentSummary = user.document_count
+                        ? `${user.verified_count} of ${user.document_count} verified`
+                        : 'None submitted';
+                    return `<tr>
+                        <td><strong>${esc(user.name || 'Profile name missing')}</strong><br><span class="badge">${esc(user.role)}</span></td>
+                        <td>${esc(user.email)}</td>
+                        <td>${esc(accountStatus)}</td>
+                        <td>${esc(user.verification_status)}</td>
+                        <td>${esc(documentSummary)}</td>
+                        <td><div class="actions">
+                            ${user.document_count ? `<button class="action-btn" data-action="documents" data-id="${esc(user.user_id)}">View documents</button>` : ''}
+                            ${user.document_count && user.verification_status !== 'Verified' ? `<button class="action-btn primary" data-action="verify" data-id="${esc(user.user_id)}">Verify identity</button>` : ''}
+                            ${!user.is_active ? `<button class="action-btn primary" data-action="activate" data-id="${esc(user.user_id)}">Activate account</button>` : ''}
+                        </div></td>
+                    </tr>`;
+                }).join('');
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #b91c1c;">${esc(error.message)}</td></tr>`;
+            }
+        }
+
+        async function showDocuments(userId) {
+            const modal = document.getElementById('documents-modal');
+            const list = document.getElementById('documents-list');
+            document.getElementById('documents-title').textContent = 'Verification documents';
+            document.getElementById('document-preview').replaceChildren();
+            list.textContent = 'Loading documents...';
+            modal.style.display = 'flex';
+            try {
+                const result = await apiRequest(`/api/admin/verification/${encodeURIComponent(userId)}`);
+                if (!result.data.length) {
+                    list.textContent = 'No documents have been submitted.';
+                    return;
+                }
+                list.innerHTML = result.data.map(document => `
+                    <div class="document-row">
+                        <span><strong>${esc(document.document_type.replace(/_/g, ' '))}</strong><br>
+                            <small>${esc(document.verified_at ? 'Verified' : 'Pending review')} · ${esc(document.uploaded_at || '')}</small>
+                        </span>
+                        <button class="action-btn" data-action="preview" data-user-id="${esc(userId)}" data-document-id="${esc(document.document_id)}">Preview</button>
+                    </div>`).join('');
+            } catch (error) {
+                list.textContent = error.message;
+            }
+        }
+
+        async function previewDocument(userId, documentId) {
+            const preview = document.getElementById('document-preview');
+            preview.textContent = 'Loading preview...';
+            if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+            currentPreviewUrl = null;
+            try {
+                const response = await fetch(`/api/admin/verification/${encodeURIComponent(userId)}/documents/${encodeURIComponent(documentId)}`, { headers: apiHeaders });
+                if (response.status === 401 || response.status === 403) {
+                    localStorage.removeItem('auth_token');
+                    window.location.href = 'login.html';
+                    return;
+                }
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Could not load this document.');
+                }
+                const file = await response.blob();
+                currentPreviewUrl = URL.createObjectURL(file);
+                preview.replaceChildren();
+                if (file.type.startsWith('image/')) {
+                    const image = document.createElement('img');
+                    image.alt = 'Submitted verification document';
+                    image.src = currentPreviewUrl;
+                    preview.appendChild(image);
+                } else if (file.type === 'application/pdf') {
+                    const frame = document.createElement('iframe');
+                    frame.title = 'Submitted verification PDF';
+                    frame.src = currentPreviewUrl;
+                    preview.appendChild(frame);
+                } else {
+                    preview.textContent = 'This document type cannot be previewed in the browser.';
+                }
+            } catch (error) {
+                preview.textContent = error.message;
+            }
+        }
+
+        async function updateAccount(userId, action) {
+            try {
+                if (action === 'verify' && !confirm('Verify all submitted identity documents for this account?')) return;
+                if (action === 'activate' && !confirm('Activate this account so its owner or agent can sign in?')) return;
+                const url = action === 'verify'
+                    ? `/api/admin/verification/${encodeURIComponent(userId)}`
+                    : `/api/admin/users/${encodeURIComponent(userId)}/activate`;
+                const options = action === 'verify'
+                    ? { method: 'PUT' }
+                    : { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activate: true }) };
+                const result = await apiRequest(url, options);
+                await loadVerifications();
+                if (action === 'verify') await showDocuments(userId);
+                else alert(result.message || 'Account activated.');
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        document.querySelector('#verifications-table tbody').addEventListener('click', event => {
+            const button = event.target.closest('button[data-action]');
+            if (!button) return;
+            if (button.dataset.action === 'documents') showDocuments(button.dataset.id);
+            else updateAccount(button.dataset.id, button.dataset.action);
+        });
+
+        document.getElementById('documents-list').addEventListener('click', event => {
+            const button = event.target.closest('button[data-action="preview"]');
+            if (button) previewDocument(button.dataset.userId, button.dataset.documentId);
+        });
+
+        function closeDocuments() {
+            document.getElementById('documents-modal').style.display = 'none';
+            if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+            currentPreviewUrl = null;
+        }
+
+        function logout() {
+            localStorage.removeItem('auth_token');
+            fetch('/api/logout', { method: 'POST', headers: apiHeaders })
+                .finally(() => { window.location.href = 'login.html'; });
+        }
+
+        document.addEventListener('DOMContentLoaded', loadVerifications);
+    </script>
+</body>
+</html>
