@@ -1241,12 +1241,22 @@ async def request_tenant_viewing(request: Request, tenant: dict = Depends(get_te
         profile = cursor.fetchone()
         if not profile:
             raise HTTPException(status_code=404, detail="Tenant profile not found")
+        # Lock the unit row for the duration of this transaction so two concurrent
+        # tenants cannot both read 'Available' and then both succeed in inserting a viewing.
         cursor.execute("""
             SELECT property_id FROM unit
             WHERE property_id = %s AND unit_number = %s AND availability_status = 'Available'
+            FOR UPDATE
         """, (data['property_id'], data['unit_number']))
         if not cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Available unit not found")
+            raise HTTPException(status_code=400, detail="Available unit not found or already booked")
+        # Guard against duplicate confirmed/pending viewings on the same unit
+        cursor.execute("""
+            SELECT viewing_id FROM viewing
+            WHERE property_id = %s AND unit_number = %s AND status IN ('pending', 'confirmed')
+        """, (data['property_id'], data['unit_number']))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="A viewing for this unit is already pending or confirmed")
         viewing_id = "VIEW_" + uuid.uuid4().hex[:12]
         cursor.execute("""
             INSERT INTO viewing (viewing_id, tenant_id, property_id, unit_number, viewing_date, viewing_time)
