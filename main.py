@@ -445,7 +445,7 @@ def delete_upload_files(urls):
 
 # API Endpoints
 @app.get("/api/get_properties")
-def get_properties():
+def get_properties(user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
@@ -475,14 +475,13 @@ def get_properties():
     return {"status": "success", "data": properties}
 
 @app.get("/api/get_property")
-def get_property(id: str, request: Request, authorization: Optional[str] = Header(None)):
+def get_property(id: str, request: Request, user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
 
     # An authenticated Admin may preview unpublished properties; everyone else sees Published only.
-    viewer = optional_session(authorization)
-    is_admin_preview = bool(viewer and viewer.get('role') == 'Admin')
+    is_admin_preview = bool(user and user.get('role') == 'Admin')
 
     cursor = conn.cursor()
     try:
@@ -1408,7 +1407,7 @@ def get_tenant_overview(tenant: dict = Depends(get_tenant_user)):
             {PRIMARY_UNIT_JOIN}
             {FEATURED_MEDIA_JOIN}
             WHERE p.property_status = 'Published'
-            ORDER BY p.is_featured DESC, p.created_at DESC, p.property_id ASC LIMIT 24
+            ORDER BY p.is_featured DESC, p.created_at DESC, p.property_id ASC
         """)
         properties = cursor.fetchall()
         cursor.execute("""
