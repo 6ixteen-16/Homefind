@@ -56,3 +56,12 @@ ALTER TABLE property_amenity ADD CONSTRAINT property_amenity_ibfk_2
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1;
 -- Mark all pre-existing accounts as active so nothing breaks.
 UPDATE users SET is_active = 1 WHERE is_active IS NULL OR is_active = 0;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(20) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
