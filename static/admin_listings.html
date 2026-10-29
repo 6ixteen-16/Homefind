@@ -27,6 +27,10 @@
         .badge { padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; border: 1px solid transparent; }
         .badge-pub { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
         .badge-draft { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+        .listing-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #e5e7eb; }
+        .listing-filters label { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.85rem; }
+        .listing-filters select { padding: 0.45rem 0.65rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; }
+        #listing-result-count { margin-left: auto; color: var(--text-muted); font-size: 0.85rem; }
 
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 50; }
         .modal { background: var(--white); padding: 2rem; border-radius: 12px; width: 680px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; }
@@ -49,9 +53,10 @@
             <a href="admin_agents.html">Manage Agents</a>
             <a href="admin_listings.html" class="active">Manage Listings</a>
             <a href="admin_inquiries.html">Inquiries</a>
+            <a href="admin_verification.html">Owners &amp; Verification</a>
             <div style="margin-top: auto;">
                 <a href="index.html">← Back to Site</a>
-                <a href="#" onclick="logout()" style="color: #dc2626;">Logout</a>
+                <a href="login.html" onclick="logout(); return false;" style="color: #dc2626;">Logout</a>
             </div>
         </div>
 
@@ -65,6 +70,22 @@
             </div>
 
             <div class="panel">
+                <div class="listing-filters">
+                    <label for="status-filter">Status
+                        <select id="status-filter">
+                            <option value="">All listings</option>
+                            <option value="Published">Active</option>
+                            <option value="Draft">Draft</option>
+                        </select>
+                    </label>
+                    <label for="sort-order">Sort
+                        <select id="sort-order">
+                            <option value="recent">Recently added</option>
+                            <option value="views">Most viewed</option>
+                        </select>
+                    </label>
+                    <span id="listing-result-count" aria-live="polite"></span>
+                </div>
                 <table id="listings-table">
                     <thead>
                         <tr>
@@ -209,7 +230,7 @@
             return fetch('/api/admin/owners', { headers: apiHeaders })
                 .then(res => res.json())
                 .then(res => {
-                    if (res.status !== 'success') return;
+                    if (res.status !== 'success') throw new Error(res.detail || res.message || 'Could not load owners.');
                     const select = document.getElementById('f-owner');
                     res.data.forEach(o => {
                         const opt = document.createElement('option');
@@ -217,6 +238,12 @@
                         opt.textContent = o.name + ' (' + o.email + ')';
                         select.appendChild(opt);
                     });
+                    return true;
+                })
+                .catch(error => {
+                    document.querySelector('#f-owner option').textContent = 'Could not load owners';
+                    alert('Owner list could not be loaded: ' + error.message);
+                    return false;
                 });
         }
         const ownersReady = loadOwners();
@@ -227,14 +254,23 @@
                 .then(res => {
                     const tbody = document.querySelector('#listings-table tbody');
                     if (res.status === 'success') {
-                        if (res.data.length === 0) {
+                        const status = document.getElementById('status-filter').value;
+                        const sort = document.getElementById('sort-order').value;
+                        const listings = res.data
+                            .filter(listing => !status || listing.property_status === status)
+                            .sort((a, b) => sort === 'views'
+                                ? (Number(b.views) || 0) - (Number(a.views) || 0)
+                                : new Date(b.created_at) - new Date(a.created_at));
+                        document.getElementById('listing-result-count').textContent =
+                            `${listings.length} ${listings.length === 1 ? 'listing' : 'listings'}`;
+                        if (listings.length === 0) {
                             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">No listings found.</td></tr>';
                             return;
                         }
-                        tbody.innerHTML = res.data.map(listing => `
+                        tbody.innerHTML = listings.map(listing => `
                             <tr>
                                 <td style="font-weight: 500;">
-                                    <a href="property.html?id=${esc(encodeURIComponent(listing.property_id))}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">${esc(listing.property_name)}</a>
+                                    <a href="admin_listings.html?edit=${esc(encodeURIComponent(listing.property_id))}" style="color: inherit; text-decoration: none;">${esc(listing.property_name)}</a>
                                 </td>
                                 <td style="color: var(--text-muted);">${esc(listing.city || '—')}</td>
                                 <td>$${parseFloat(listing.price || 0).toLocaleString()}</td>
@@ -344,8 +380,10 @@
         });
 
         function logout() {
+            const currentToken = localStorage.getItem('auth_token');
             localStorage.removeItem('auth_token');
-            window.location.href = 'login.html';
+            fetch('/api/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + currentToken } })
+                .finally(() => { window.location.href = 'login.html'; });
         }
 
         // Buttons carry their data in data-* attributes (never inside inline JavaScript strings).
@@ -356,7 +394,23 @@
             else if (btn.dataset.action === 'delete') deleteListing(btn.dataset.id);
         });
 
-        document.addEventListener('DOMContentLoaded', fetchListings);
+        document.addEventListener('DOMContentLoaded', async function() {
+            const params = new URLSearchParams(window.location.search);
+            const requestedStatus = params.get('status');
+            if (['Published', 'Draft'].includes(requestedStatus)) {
+                document.getElementById('status-filter').value = requestedStatus;
+            }
+            if (params.get('sort') === 'views') {
+                document.getElementById('sort-order').value = 'views';
+            }
+            document.getElementById('status-filter').addEventListener('change', fetchListings);
+            document.getElementById('sort-order').addEventListener('change', fetchListings);
+            fetchListings();
+            await ownersReady;
+            const editId = params.get('edit');
+            if (editId) editListing(editId);
+            else if (params.get('action') === 'new') openModal();
+        });
     </script>
 </body>
 </html>
