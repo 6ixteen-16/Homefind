@@ -5,21 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Properties - Homefind</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .filter-section { background: var(--white); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; margin-bottom: 2rem; }
+        .filter-grid { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: .75rem; }
+        .filter-grid input, .filter-grid select { width: 100%; padding: .65rem .8rem; border: 1px solid #d8e2e6; border-radius: 6px; font-size: .95rem; box-sizing: border-box; }
+        .btn-clear { background: #e9dfd0; color: #25445a; border: none; padding: .65rem 1rem; border-radius: 6px; font-weight: 700; cursor: pointer; }
+        .btn-clear:hover { background: #dcd0bf; }
+        .btn-logout { background: #25445a; color: #fff; border: none; padding: .5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 700; }
+        .btn-logout:hover { background: #1a3243; }
+        .card-details-pills { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; font-size: .85rem; color: #4e6875; }
+        .card-details-pills span { background: #f0f4f6; padding: .2rem .5rem; border-radius: 4px; }
+        @media(max-width: 800px) { .filter-grid { grid-template-columns: 1fr 1fr; } }
+        @media(max-width: 500px) { .filter-grid { grid-template-columns: 1fr; } }
+    </style>
 </head>
 <body>
 
     <!-- Navbar -->
     <nav class="navbar">
-        <a href="tenant_portal.html" class="logo">Homefind</a>
-        <ul class="nav-links">
-            <li><a href="tenant_portal.html">Dashboard</a></li>
-        </ul>
-        <a href="tenant_portal.html" class="btn-primary">Back to Dashboard</a>
+        <a href="properties.html" class="logo">Homefind</a>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <span id="user-badge" style="font-size: .9rem; color: var(--text-muted);">Signed in</span>
+            <button id="btn-logout" class="btn-logout" type="button">Log Out</button>
+        </div>
     </nav>
 
-    <div class="container">
-        <h1 style="margin-bottom: 2rem;">Available Properties</h1>
-        
+    <div class="container" style="margin-top: 2rem; margin-bottom: 3rem;">
+        <div style="margin-bottom: 2rem;">
+            <h1 style="color: #25445a; margin-bottom: .5rem;">Available Properties</h1>
+            <p style="color: var(--text-muted); margin: 0; font-size: 1rem;">
+                Browse available homes below. Click "View Details &amp; Inquire" on any property to see full unit details, amenities, and send your inquiry directly.
+            </p>
+        </div>
+
+        <div class="filter-section">
+            <div class="filter-grid">
+                <input type="text" id="filter-keyword" placeholder="Search by property name, city, or location...">
+                <select id="filter-beds">
+                    <option value="">All Bedrooms</option>
+                    <option value="1">1+ Bedrooms</option>
+                    <option value="2">2+ Bedrooms</option>
+                    <option value="3">3+ Bedrooms</option>
+                    <option value="4">4+ Bedrooms</option>
+                </select>
+                <select id="filter-price">
+                    <option value="">Any Price</option>
+                    <option value="500000">Up to 500,000</option>
+                    <option value="1000000">Up to 1,000,000</option>
+                    <option value="2000000">Up to 2,000,000</option>
+                    <option value="5000000">Up to 5,000,000</option>
+                </select>
+                <button type="button" id="btn-clear" class="btn-clear">Clear</button>
+            </div>
+        </div>
+
+        <div id="results-count" style="margin-bottom: 1rem; color: var(--text-muted); font-size: .9rem;"></div>
         <div id="error-message" style="color: red; display: none; text-align: center; margin-bottom: 1rem;"></div>
 
         <div class="grid-3" id="properties-grid">
@@ -34,10 +74,19 @@
             window.location.replace('login.html');
         }
 
+        const headers = { 'Authorization': 'Bearer ' + authToken };
+        let allProperties = [];
+
+        document.getElementById('btn-logout').addEventListener('click', async () => {
+            try {
+                await fetch('/api/logout', { method: 'POST', headers });
+            } catch (_) {}
+            localStorage.removeItem('auth_token');
+            window.location.replace('login.html');
+        });
+
         document.addEventListener('DOMContentLoaded', function() {
-            fetch('/api/get_properties', {
-                headers: { 'Authorization': 'Bearer ' + authToken }
-            })
+            fetch('/api/get_properties', { headers })
                 .then(async response => {
                     if (response.status === 401 || response.status === 403) {
                         localStorage.removeItem('auth_token');
@@ -52,43 +101,12 @@
                 })
                 .then(result => {
                     if (!result) return;
-                    const grid = document.getElementById('properties-grid');
-                    grid.innerHTML = '';
-                    
                     if (result.status === 'success') {
-                        if (!result.data || result.data.length === 0) {
-                            grid.innerHTML = '<p style="text-align: center; grid-column: 1 / -1;">No properties available at the moment.</p>';
-                            return;
-                        }
-                        
-                        result.data.forEach(prop => {
-                            const imageUrl = prop.image_url ? prop.image_url : '/uploads/PROP_39413964_a32fe75a26a14e258e43cd17208d1aed.png';
-                            const bedrooms = prop.bedrooms || 0;
-                            const bathrooms = prop.bathrooms || 0;
-                            const sqft = prop.square_footage || 0;
-                            
-                            const cardHTML = `
-                                <div class="card">
-                                    <img src="${esc(imageUrl)}" alt="Property Image" onerror="this.src='/uploads/PROP_39413964_a32fe75a26a14e258e43cd17208d1aed.png'">
-                                    <div class="card-body">
-                                        <h3 class="card-title">${esc(prop.property_name)}</h3>
-                                        <div class="card-price">${esc(prop.currency || 'USD')} ${parseFloat(prop.price).toLocaleString()}</div>
-                                        <div style="color:var(--text-muted); margin:.35rem 0;">${esc(prop.location || prop.city || '')}${prop.country ? ', ' + esc(prop.country) : ''}</div>
-                                        <div class="card-details">
-                                            <span>${esc(bedrooms)} Beds</span> &bull; 
-                                            <span>${esc(bathrooms)} Baths</span> &bull; 
-                                            <span>${esc(sqft)} sqft</span>
-                                        </div>
-                                        <div style="color:var(--text-muted); margin:.35rem 0;">${esc(prop.amenities || 'Property amenities available on details page')}</div>
-                                        <a href="property.html?id=${esc(encodeURIComponent(prop.property_id))}" class="btn-primary" style="display: block; text-align: center;">View Details &amp; Inquire</a>
-                                    </div>
-                                </div>
-                            `;
-                            grid.innerHTML += cardHTML;
-                        });
+                        allProperties = result.data || [];
+                        applyFilters();
                     } else {
                         document.getElementById('error-message').style.display = 'block';
-                        document.getElementById('error-message').innerText = "Error loading properties: " + (result.detail || result.message || "The server could not load properties.");
+                        document.getElementById('error-message').innerText = "Error loading properties: " + (result.detail || result.message || "Could not load properties.");
                     }
                 })
                 .catch(error => {
@@ -96,6 +114,74 @@
                     document.getElementById('error-message').innerText = "Error loading properties: " + (error.message || "Failed to connect to the server.");
                     document.getElementById('properties-grid').innerHTML = '';
                 });
+        });
+
+        function renderProperties(list) {
+            const grid = document.getElementById('properties-grid');
+            document.getElementById('results-count').textContent = `Showing ${list.length} of ${allProperties.length} available properties`;
+
+            if (!list.length) {
+                grid.innerHTML = '<p style="text-align: center; grid-column: 1 / -1; color: var(--text-muted); padding: 2rem 0;">No properties match your current search.</p>';
+                return;
+            }
+
+            grid.innerHTML = '';
+            list.forEach(prop => {
+                const imageUrl = prop.image_url ? prop.image_url : '/uploads/PROP_39413964_a32fe75a26a14e258e43cd17208d1aed.png';
+                const bedrooms = prop.bedrooms || 0;
+                const bathrooms = prop.bathrooms || 0;
+                const sqft = prop.square_footage || 0;
+                const location = [prop.city, prop.country].filter(Boolean).map(esc).join(', ');
+
+                const cardHTML = `
+                    <div class="card">
+                        <img src="${esc(imageUrl)}" alt="${esc(prop.property_name)}" onerror="this.src='/uploads/PROP_39413964_a32fe75a26a14e258e43cd17208d1aed.png'">
+                        <div class="card-body">
+                            <h3 class="card-title">${esc(prop.property_name)}</h3>
+                            <div class="card-price">${esc(prop.currency || 'USD')} ${parseFloat(prop.price).toLocaleString()}</div>
+                            <div style="color:var(--text-muted); margin:.35rem 0; font-size:.9rem;">${location || 'Location details in listing'}</div>
+                            <div class="card-details-pills">
+                                <span>${esc(bedrooms)} Beds</span>
+                                <span>${esc(bathrooms)} Baths</span>
+                                <span>${esc(sqft)} sqft</span>
+                            </div>
+                            <div style="color:var(--text-muted); margin:.5rem 0 1rem; font-size:.85rem; min-height: 2.4em;">
+                                ${esc(prop.amenities || 'Property amenities available on details page')}
+                            </div>
+                            <a href="property.html?id=${esc(encodeURIComponent(prop.property_id))}" class="btn-primary" style="display: block; text-align: center; text-decoration: none;">View Details &amp; Inquire</a>
+                        </div>
+                    </div>
+                `;
+                grid.innerHTML += cardHTML;
+            });
+        }
+
+        function applyFilters() {
+            const q = document.getElementById('filter-keyword').value.toLowerCase().trim();
+            const minBeds = parseInt(document.getElementById('filter-beds').value, 10) || 0;
+            const maxPrice = parseFloat(document.getElementById('filter-price').value) || 0;
+
+            const filtered = allProperties.filter(p => {
+                if (q) {
+                    const haystack = `${p.property_name || ''} ${p.city || ''} ${p.district || ''} ${p.location || ''} ${p.country || ''} ${p.description || ''}`.toLowerCase();
+                    if (!haystack.includes(q)) return false;
+                }
+                if (minBeds > 0 && (p.bedrooms || 0) < minBeds) return false;
+                if (maxPrice > 0 && (p.price || 0) > maxPrice) return false;
+                return true;
+            });
+
+            renderProperties(filtered);
+        }
+
+        document.getElementById('filter-keyword').addEventListener('input', applyFilters);
+        document.getElementById('filter-beds').addEventListener('change', applyFilters);
+        document.getElementById('filter-price').addEventListener('change', applyFilters);
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            document.getElementById('filter-keyword').value = '';
+            document.getElementById('filter-beds').value = '';
+            document.getElementById('filter-price').value = '';
+            applyFilters();
         });
     </script>
 </body>
