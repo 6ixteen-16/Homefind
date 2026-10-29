@@ -71,6 +71,17 @@
                     msgBox.style.background = '#fee2e2';
                     msgBox.style.color = '#dc2626';
                     msgBox.innerText = result.message;
+                    if (result.restart) {
+                        // The one-time-passcode session ended: go back to the password step.
+                        isOtpMode = false;
+                        currentSessionToken = null;
+                        document.getElementById('standard-login').style.display = 'block';
+                        document.getElementById('otp-login').style.display = 'none';
+                        document.getElementById('otp').required = false;
+                        document.getElementById('otp').value = '';
+                        document.getElementById('submit-btn').innerText = 'Login';
+                    }
+
                 } else if (result.status === 'info' && result.otp_required) {
                     // Switch to OTP mode
                     isOtpMode = true;

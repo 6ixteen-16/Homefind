@@ -1,5 +1,8 @@
 # Homefind FastAPI
 
+> **Security update:** see [FIXES.md](FIXES.md) for the latest security and data fixes and the steps needed to deploy them. Some code excerpts below (login/OTP, password hashing) describe the previous version.
+
+
 Homefind is a property listing and property-management system built with FastAPI, MySQL, and a static HTML/CSS/JavaScript frontend served by the API.
 
 ## Features
@@ -34,6 +37,9 @@ Homefind is a property listing and property-management system built with FastAPI
 |-- seed.sql                 Example property and user data inserts
 |-- schema.sql               Canonical database schema
 |-- schema_migration.sql     Safe upgrade for existing installations
+|-- demo_data.py             Database-free local demo property data
+|-- FIXES.md                 Security and bugfix documentation
+
 |-- test_users.sql           Additional test-user inserts
 |-- static/
 |   |-- index.html            Public home page
@@ -420,6 +426,7 @@ pip install -r requirements.txt
 
 `schema.sql` is the canonical schema for a fresh installation. Existing installations should run `schema_migration.sql` first. `seed.sql` contains data inserts only, so do not load it before the tables exist.
 
+
 ### 1. Create the database
 
 ```bash
@@ -659,7 +666,8 @@ Windows PowerShell:
 Get-Content .\seed.sql | mysql -u root -p homefinder_db
 ```
 
-The seed includes sample owners, properties, units, media, and related records. Its `INSERT IGNORE` statements make rerunning it safe for existing keys.
+The seed includes 16 published sample properties across apartments, condominiums, and rental houses, with units, media, owners, and related listing records. Its `INSERT IGNORE` statements make rerunning it safe for existing keys.
+
 
 ### 5. Create demo accounts
 
@@ -692,6 +700,13 @@ DB_NAME = "homefinder_db"
 ```
 
 `main.py` and `run_seed.py` automatically load a local `.env` file when present. Copy `.env.example` to `.env` and set real values in your process manager or deployment secret store. On Windows PowerShell you may also use `$env:DB_PASS = '...'`; on macOS use `export DB_PASS='...'`; Docker can use `--env-file .env`. Never commit `.env`.
+
+### Database-free local demo
+
+Set `DEMO_MODE=1` in `.env` to browse the 16 built-in sample properties without connecting to MySQL. The demo serves property lists and detail pages from local sample data; database-backed login, inquiries, contact submissions, and management actions remain unavailable. No database credentials are required, and the application will not open a database connection in this mode.
+
+Set `DEMO_MODE=0` and configure valid `DB_*` values to use the live database instead.
+
 
 ## Run the application
 

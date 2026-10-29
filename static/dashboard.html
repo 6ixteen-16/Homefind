@@ -255,6 +255,7 @@
         </div>
     </div>
 
+    <script src="esc.js"></script>
     <script>
         function logout() {
             fetch('/api/logout', { method: 'POST' })
@@ -317,13 +318,13 @@
                     if (d.recent_inquiries && d.recent_inquiries.length > 0) {
                         inqList.innerHTML = d.recent_inquiries.map(inq => `
                             <div class="list-item">
-                                <div class="avatar">${inq.name.charAt(0).toUpperCase()}</div>
+                                <div class="avatar">${esc(inq.name.charAt(0).toUpperCase())}</div>
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-weight: 500; font-size: 0.9rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${inq.name}</div>
-                                    <div style="font-size: 0.8rem; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${inq.property_name || 'General Inquiry'}</div>
+                                    <div style="font-weight: 500; font-size: 0.9rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${esc(inq.name)}</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${esc(inq.property_name || 'General Inquiry')}</div>
                                 </div>
                                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem;">
-                                    <span class="badge ${inq.status === 'NEW' ? 'badge-new' : 'badge-read'}">${inq.status}</span>
+                                    <span class="badge ${inq.status === 'NEW' ? 'badge-new' : 'badge-read'}">${esc(inq.status)}</span>
                                     <span style="font-size: 0.7rem; color: var(--text-muted);">${formatRelativeTime(inq.created_at)}</span>
                                 </div>
                             </div>
@@ -339,7 +340,7 @@
                             <div class="list-item">
                                 <div style="font-family: monospace; font-size: 0.8rem; color: #9ca3af; width: 1.5rem;">${i + 1}</div>
                                 <div style="flex: 1; min-width: 0;">
-                                    <a href="property.html?id=${prop.property_id}" style="font-weight: 500; font-size: 0.9rem; color: var(--text-color); text-decoration: none; display: block; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${prop.property_name}</a>
+                                    <a href="property.html?id=${esc(encodeURIComponent(prop.property_id))}" style="font-weight: 500; font-size: 0.9rem; color: var(--text-color); text-decoration: none; display: block; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${esc(prop.property_name)}</a>
                                     <div style="font-size: 0.75rem; color: var(--text-muted);">Listed ${formatRelativeTime(prop.created_at)}</div>
                                 </div>
                                 <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.3rem;">
@@ -362,9 +363,9 @@
                                 </div>
                                 <div style="flex: 1; min-width: 0;">
                                     <div style="font-size: 0.8rem;">
-                                        <span style="font-weight: 500;">${log.user_email || 'System'}</span> 
-                                        <span style="color: var(--text-muted);">${log.action.replace('_', ' ').toLowerCase()}</span> 
-                                        <span style="font-weight: 500;">${log.table_name}</span>
+                                        <span style="font-weight: 500;">${esc(log.user_email || 'System')}</span> 
+                                        <span style="color: var(--text-muted);">${esc(String(log.action).replace(/_/g, ' ').toLowerCase())}</span> 
+                                        <span style="font-weight: 500;">${esc(log.table_name)}</span>
                                     </div>
                                     <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.1rem;">
                                         ${formatRelativeTime(log.created_at)}

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from demo_data import DEMO_PROPERTIES
 
 load_dotenv()
 
@@ -25,9 +26,16 @@ class AgentUpdate(BaseModel):
 import pymysql
 import pymysql.cursors
 import hashlib
+import hmac
+import math
+import re
+import secrets
+import smtplib
+from email.message import EmailMessage
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
 from typing import Optional
 import datetime
-import random
 import uuid
 
 # In-memory sessions are process-local. Use Redis or a database for multi-worker production deployments.
@@ -35,6 +43,21 @@ sessions = {}
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
 PRIVATE_UPLOAD_DIR = Path(os.getenv("PRIVATE_UPLOAD_DIR", "private_uploads"))
 PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# One-time passcode settings
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "300"))
+OTP_MAX_ATTEMPTS = 5
+
+# Optional SMTP settings used to e-mail one-time passcodes
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@homefind.local")
+SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") != "0"
+
+def now_ts():
+    return datetime.datetime.now(datetime.timezone.utc).timestamp()
 
 def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization:
@@ -46,10 +69,22 @@ def get_current_user(authorization: Optional[str] = Header(None)):
     session = sessions.get(token)
     if not session or not session.get('authenticated'):
         raise HTTPException(status_code=401, detail="Invalid session")
-    if session.get('expires_at', 0) <= datetime.datetime.now(datetime.timezone.utc).timestamp():
+    if session.get('expires_at', 0) <= now_ts():
         sessions.pop(token, None)
         raise HTTPException(status_code=401, detail="Session expired")
     session['token'] = token
+    return session
+
+def optional_session(authorization: Optional[str]):
+    """Return the authenticated session for a Bearer header, or None (never raises)."""
+    if not authorization:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not separator or not token.strip():
+        return None
+    session = sessions.get(token.strip())
+    if not session or not session.get('authenticated') or session.get('expires_at', 0) <= now_ts():
+        return None
     return session
 
 def require_roles(*allowed_roles):
@@ -75,6 +110,22 @@ def get_agent_user(user: dict = Depends(require_roles("Agent"))):
 def get_tenant_user(user: dict = Depends(require_roles("Tenant"))):
     return user
 
+DESTINATIONS = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
+
+def new_session(user_id, role):
+    token = secrets.token_urlsafe(32)
+    sessions[token] = {
+        'user_id': user_id,
+        'role': role,
+        'authenticated': True,
+        'expires_at': now_ts() + SESSION_TTL_SECONDS,
+    }
+    return token
+
+def purge_user_sessions(user_id):
+    for token in [t for t, s in sessions.items() if s.get('user_id') == user_id]:
+        sessions.pop(token, None)
+
 
 # Configuration
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
@@ -82,6 +133,7 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASS = os.getenv("DB_PASS", "")
 DB_NAME = os.getenv("DB_NAME", "homefinder_db")
+DEMO_MODE = os.getenv("DEMO_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 
@@ -112,33 +164,78 @@ if CORS_ORIGINS:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+# Security headers. The pages use inline <script>/<style>, so 'unsafe-inline' is still required;
+# the real XSS protection is output escaping in the pages (static/esc.js). This policy still blocks
+# external scripts, plugins, framing and cross-site fetch/XHR as defence in depth.
+CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; "
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+)
+DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    request_id = str(uuid.uuid4())
     response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-    if APP_ENV == "production":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.url.path not in DOC_PATHS:
+        response.headers.setdefault("Content-Security-Policy", CSP)
     return response
 
-# Password verification using built-in hashlib (SHA-256)
-# NOTE: Passwords in the database should be stored as sha256 hashes.
-# For the seed.sql dummy data, the plain password is 'password'.
-def verify_password(plain_password: str, stored_hash: str) -> bool:
-    # Support both SHA-256 (our format) and bcrypt (from PHP seed, best-effort)
-    sha_hash = hashlib.sha256(plain_password.encode()).hexdigest()
-    return sha_hash == stored_hash
+# ---------------------------------------------------------------------------
+# Passwords: argon2id for new hashes. Legacy unsalted SHA-256 hashes (from the old
+# seed data / earlier versions) are still accepted once and are upgraded to argon2
+# automatically at the next successful login.
+# ---------------------------------------------------------------------------
+ph = PasswordHasher()
+LEGACY_SHA256 = re.compile(r'^[0-9a-fA-F]{64}$')
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+COMMON_PASSWORDS = {"password", "password1", "password123", "12345678", "123456789", "qwerty123",
+                    "admin123", "agent123", "tenant123", "owner123", "letmein123", "homefind123"}
 
 def hash_password(plain_password: str) -> str:
-    return hashlib.sha256(plain_password.encode()).hexdigest()
+    return ph.hash(plain_password)
+
+def verify_password(plain_password: str, stored_hash: str) -> bool:
+    if not stored_hash or plain_password is None:
+        return False
+    if stored_hash.startswith("$argon2"):
+        try:
+            return ph.verify(stored_hash, plain_password)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    if LEGACY_SHA256.match(stored_hash):
+        sha_hash = hashlib.sha256(plain_password.encode()).hexdigest()
+        return hmac.compare_digest(sha_hash, stored_hash.lower())
+    return False
+
+def password_needs_upgrade(stored_hash: str) -> bool:
+    if not stored_hash.startswith("$argon2"):
+        return True
+    try:
+        return ph.check_needs_rehash(stored_hash)
+    except Exception:
+        return True
+
+def validate_new_password(password, email=None):
+    if not isinstance(password, str):
+        return "Password is required."
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+    if len(password) > MAX_PASSWORD_LENGTH:
+        return f"Password must be at most {MAX_PASSWORD_LENGTH} characters."
+    if password.lower() in COMMON_PASSWORDS or (email and password.lower() == email.lower()):
+        return "That password is too easy to guess. Please choose a different one."
+    return None
 
 
 # Connect to Database
 def get_db_connection():
+    if DEMO_MODE:
+        return None
     try:
         return pymysql.connect(
             host=DB_HOST,
@@ -171,6 +268,62 @@ def log_audit_action(user_id, action, table_name, record_id, old_value, new_valu
         cursor.close()
         conn.close()
 
+# ---------------------------------------------------------------------------
+# Small helpers: consistent error responses and input validation
+# ---------------------------------------------------------------------------
+def err(message, status=400, **extra):
+    return JSONResponse(status_code=status, content={"status": "error", "message": message, **extra})
+
+def server_error(exc, context=""):
+    """Log the real error on the server; give the browser a generic message."""
+    print(f"Server error {context}: {exc!r}")
+    return err("Something went wrong. Please try again.", 500)
+
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+PROPERTY_STATUSES = {"Draft", "Published", "Archived"}
+PROPERTY_TYPES = {"Apartment", "Condominium", "Rental House"}
+INQUIRY_STATUSES = {"NEW", "IN_PROGRESS", "RESOLVED", "CLOSED", "READ"}
+MAX_MONEY = 9999999999999.99  # DECIMAL(15,2)
+
+async def read_json_object(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+def text_field(data, key, label, max_len, required=True):
+    value = data.get(key, '')
+    if value is None:
+        value = ''
+    if not isinstance(value, str):
+        return None, f"{label} must be text."
+    value = value.strip()
+    if required and not value:
+        return None, f"{label} is required."
+    if len(value) > max_len:
+        return None, f"{label} must be at most {max_len} characters."
+    return value, None
+
+def email_field(data, key="email", label="Email"):
+    value, error = text_field(data, key, label, 255, True)
+    if error:
+        return None, error
+    if not EMAIL_RE.match(value):
+        return None, "Please enter a valid email address."
+    return value, None
+
+def number_field(value, label, minimum, maximum, integer=False):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None, f"{label} must be a number."
+    if not math.isfinite(number):
+        return None, f"{label} must be a number."
+    if number < minimum or number > maximum:
+        return None, f"{label} must be between {minimum:g} and {maximum:g}."
+    return (int(number) if integer else number), None
+
 # Models
 class LoginRequest(BaseModel):
     email: Optional[str] = None
@@ -178,94 +331,290 @@ class LoginRequest(BaseModel):
     otp: Optional[str] = None
     session_token: Optional[str] = None
 
+class ChangePasswordRequest(BaseModel):
+    email: str
+    current_password: str
+    new_password: str
+
+# ---------------------------------------------------------------------------
+# SQL fragments shared by the public listing, the tenant portal and the admin editor.
+# Each property is joined to exactly ONE unit (its "primary" unit) and ONE image so a
+# property can never appear more than once in a result set.
+#   primary unit = the unit called MAIN if there is one, otherwise the cheapest unit.
+#   listing image = the featured image if there is one, otherwise the first image.
+# ---------------------------------------------------------------------------
+PRIMARY_UNIT_ORDER = "(u2.unit_number = 'MAIN') DESC, (u2.monthly_rent IS NULL) ASC, u2.monthly_rent ASC, u2.unit_number ASC"
+PRIMARY_UNIT_JOIN = f"""
+    LEFT JOIN unit u ON u.property_id = p.property_id AND u.unit_number = (
+        SELECT u2.unit_number FROM unit u2 WHERE u2.property_id = p.property_id
+        ORDER BY {PRIMARY_UNIT_ORDER} LIMIT 1)
+"""
+FEATURED_MEDIA_JOIN = """
+    LEFT JOIN property_media m ON m.media_id = (
+        SELECT m2.media_id FROM property_media m2 WHERE m2.property_id = p.property_id
+        ORDER BY m2.is_featured DESC, m2.media_id ASC LIMIT 1)
+"""
+
+# ---------------------------------------------------------------------------
+# Image uploads (public listing photos)
+# ---------------------------------------------------------------------------
+UPLOAD_DIR = Path("static/uploads")
+LISTING_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+def detect_image_extension(content: bytes):
+    """Decide the file type from the file's own bytes, never from the client-supplied name/type."""
+    if content.startswith(b'\xff\xd8\xff'):
+        return ".jpg"
+    if content.startswith(b'\x89PNG\r\n\x1a\n'):
+        return ".png"
+    if content[:4] == b'RIFF' and content[8:12] == b'WEBP':
+        return ".webp"
+    return None
+
+async def read_listing_image(image):
+    """Return (content, extension) or (None, None) when no file was sent. Raises ValueError for bad files."""
+    if image is None or not image.filename:
+        return None, None
+    content = await image.read(LISTING_IMAGE_MAX_BYTES + 1)
+    if len(content) == 0:
+        return None, None
+    if len(content) > LISTING_IMAGE_MAX_BYTES:
+        raise ValueError("Image must be 5 MB or smaller.")
+    extension = detect_image_extension(content)
+    if not extension:
+        raise ValueError("Image must be a JPEG, PNG or WebP file.")
+    return content, extension
+
+def write_listing_image(property_id, content, extension):
+    filename = f"{property_id}_{uuid.uuid4().hex}{extension}"
+    (UPLOAD_DIR / filename).write_bytes(content)
+    return filename
+
+def delete_upload_files(urls):
+    """Delete uploaded image files that are no longer referenced by any property_media row."""
+    base = UPLOAD_DIR.resolve()
+    conn = get_db_connection()
+    if not conn:
+        return
+    cursor = conn.cursor()
+    try:
+        for url in urls:
+            if not url or not url.startswith("/uploads/"):
+                continue
+            cursor.execute("SELECT COUNT(*) AS n FROM property_media WHERE url = %s", (url,))
+            if cursor.fetchone()['n'] > 0:
+                continue
+            target = (base / url[len("/uploads/"):]).resolve()
+            if base in target.parents and target.is_file():
+                try:
+                    target.unlink()
+                except OSError as exc:
+                    print(f"Could not delete {target}: {exc}")
+    finally:
+        cursor.close()
+        conn.close()
+
 # API Endpoints
 @app.get("/api/get_properties")
 def get_properties():
+    if DEMO_MODE:
+        properties = [
+            {
+                "property_id": prop["property_id"],
+                "property_name": prop["property_name"],
+                "price": prop["price"],
+                "currency": prop.get("currency", "USD"),
+                "description": prop["description"],
+                "location": prop.get("location"),
+                "city": prop.get("city"),
+                "country": prop.get("country"),
+                "is_featured": prop["is_featured"],
+                "bedrooms": prop["bedrooms"],
+                "bathrooms": prop["bathrooms"],
+                "square_footage": prop["square_footage"],
+                "monthly_rent": prop["monthly_rent"],
+                "availability_status": prop.get("availability_status", "Available"),
+                "amenities": prop.get("amenities"),
+                "image_url": prop["media"][0]["url"] if prop["media"] else None,
+            }
+            for prop in DEMO_PROPERTIES
+        ]
+        return {"status": "success", "data": properties}
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
-    
+
     cursor = conn.cursor()
-    cursor.execute("""
-         SELECT p.property_id, p.property_name, p.price, p.currency, p.description,
-             p.street, p.district, p.city, p.country, p.location,
-             p.latitude, p.longitude, p.is_featured, p.views,
-             u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent,
-             u.availability_status, m.url AS image_url,
-             (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
-              FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
-              WHERE pam.property_id = p.property_id) AS amenities
-        FROM property p
-        LEFT JOIN unit u ON p.property_id = u.property_id
-        LEFT JOIN property_media m ON p.property_id = m.property_id AND m.is_featured = 1
-        WHERE p.property_status = 'Published'
-         ORDER BY p.created_at DESC
-    """)
-    properties = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
+    try:
+        cursor.execute(f"""
+            SELECT p.property_id, p.property_name, p.price, p.currency, p.description,
+                   p.street, p.district, p.city, p.country, p.location,
+                   p.latitude, p.longitude, p.is_featured, p.views,
+                   u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent,
+                   u.availability_status, m.url AS image_url,
+                   (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
+                    FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+                    WHERE pam.property_id = p.property_id) AS amenities
+            FROM property p
+            {PRIMARY_UNIT_JOIN}
+            {FEATURED_MEDIA_JOIN}
+            WHERE p.property_status = 'Published'
+            ORDER BY p.is_featured DESC, p.created_at DESC, p.property_id ASC
+        """)
+        properties = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
     return {"status": "success", "data": properties}
 
 @app.get("/api/get_property")
-def get_property(id: str, request: Request):
+def get_property(id: str, request: Request, authorization: Optional[str] = Header(None)):
+    if DEMO_MODE:
+        prop = next((item for item in DEMO_PROPERTIES if item["property_id"] == id), None)
+        if not prop:
+            return err("Property not found.", 404)
+        return {"status": "success", "data": prop}
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
-    
+
+    # An authenticated Admin may preview unpublished properties; everyone else sees Published only.
+    viewer = optional_session(authorization)
+    is_admin_preview = bool(viewer and viewer.get('role') == 'Admin')
+
     cursor = conn.cursor()
-    cursor.execute("""
-         SELECT p.*, COALESCE(o.name, 'Unknown Owner') AS owner_name,
-             u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent, u.availability_status,
-             (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
-              FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
-              WHERE pam.property_id = p.property_id) AS amenities
-        FROM property p
-        LEFT JOIN owner o ON p.owner_id = o.owner_id
-        LEFT JOIN unit u ON p.property_id = u.property_id
-        WHERE p.property_id = %s
-    """, (id,))
-    prop = cursor.fetchone()
-    
-    if not prop:
+    try:
+        cursor.execute(f"""
+            SELECT p.*, COALESCE(o.name, 'Unknown Owner') AS owner_name,
+                   u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent, u.availability_status
+            FROM property p
+            LEFT JOIN owner o ON p.owner_id = o.owner_id
+            {PRIMARY_UNIT_JOIN}
+            WHERE p.property_id = %s
+        """, (id,))
+        prop = cursor.fetchone()
+
+        if not prop or (prop['property_status'] != 'Published' and not is_admin_preview):
+            return err("Property not found.", 404)
+
+        cursor.execute("SELECT url FROM property_media WHERE property_id = %s ORDER BY is_featured DESC, media_id ASC", (id,))
+        prop['media'] = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ') AS amenities
+            FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+            WHERE pam.property_id = %s
+        """, (id,))
+        amenities_row = cursor.fetchone()
+        prop['amenities'] = amenities_row['amenities'] if amenities_row and amenities_row['amenities'] else None
+
+        cursor.execute("""
+            SELECT unit_number, floor, bedrooms, bathrooms, square_footage, monthly_rent, availability_status
+            FROM unit WHERE property_id = %s ORDER BY monthly_rent ASC, unit_number ASC
+        """, (id,))
+        prop['units'] = cursor.fetchall()
+
+        # Count the view (public page views of published properties only).
+        if prop['property_status'] == 'Published' and not is_admin_preview:
+            cursor.execute("UPDATE property SET views = views + 1 WHERE property_id = %s", (id,))
+            conn.commit()
+            prop['views'] = (prop.get('views') or 0) + 1
+        if prop.get('created_at'):
+            prop['created_at'] = str(prop['created_at'])
+    finally:
         cursor.close()
         conn.close()
-        return {"status": "error", "message": "Property not found."}
-        
-    cursor.execute("SELECT url, type, is_featured FROM property_media WHERE property_id = %s ORDER BY is_featured DESC", (id,))
-    prop['media'] = cursor.fetchall()
 
-    cursor.execute("""
-        SELECT unit_number, floor, bedrooms, bathrooms, square_footage,
-               monthly_rent, availability_status
-        FROM unit WHERE property_id = %s ORDER BY unit_number
-    """, (id,))
-    prop['units'] = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-    
-    log_audit_action(None, 'VIEW_PROPERTY', 'property', id, None, None, request.client.host)
-    
     return {"status": "success", "data": prop}
+
+LOCKED_MESSAGE = "Account locked due to too many failed attempts. Try again later."
+INVALID_MESSAGE = "Invalid email or password."
+
+def authenticate(conn, cursor, email, password, ip):
+    """Check an email/password pair with lockout handling. Returns (user, error_message)."""
+    cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    if not user:
+        return None, INVALID_MESSAGE
+
+    now = datetime.datetime.now()
+    locked_until = user['locked_until']
+    if locked_until and locked_until > now:
+        return None, LOCKED_MESSAGE
+    # A lock that has expired starts a fresh set of attempts (the old counter must not carry over).
+    attempts_before = 0 if locked_until else (user['failed_login_attempts'] or 0)
+
+    if not verify_password(password, user['password_hash']):
+        attempts = attempts_before + 1
+        new_lock = (now + datetime.timedelta(minutes=15)) if attempts >= 5 else None
+        cursor.execute("UPDATE users SET failed_login_attempts = %s, locked_until = %s WHERE user_id = %s",
+                       (attempts, new_lock, user['user_id']))
+        conn.commit()
+        log_audit_action(user['user_id'], 'LOGIN_FAILED', 'users', user['user_id'], None, f"Attempt {attempts}", ip)
+        return None, INVALID_MESSAGE
+
+    if password_needs_upgrade(user['password_hash']):
+        cursor.execute("UPDATE users SET password_hash = %s, failed_login_attempts = 0, locked_until = NULL WHERE user_id = %s",
+                       (hash_password(password), user['user_id']))
+    else:
+        cursor.execute("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = %s", (user['user_id'],))
+    conn.commit()
+    return user, None
+
+def send_otp(email, otp):
+    """E-mail the one-time passcode. Returns True when it was delivered (or printed in development)."""
+    if SMTP_HOST:
+        try:
+            message = EmailMessage()
+            message["Subject"] = "Your Homefind verification code"
+            message["From"] = SMTP_FROM
+            message["To"] = email
+            message.set_content(f"Your Homefind verification code is {otp}. It expires in {OTP_TTL_SECONDS // 60} minutes. "
+                                "If you did not try to sign in, please ignore this message.")
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+                if SMTP_STARTTLS:
+                    smtp.starttls()
+                if SMTP_USER:
+                    smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(message)
+            return True
+        except Exception as exc:
+            print(f"Could not send OTP e-mail: {exc!r}")
+            return False
+    if APP_ENV != "production":
+        # Development convenience: the code appears in the SERVER console only, never in the HTTP response.
+        print(f"[DEV ONLY] One-time passcode for {email}: {otp}")
+        return True
+    return False
+
+def verify_otp_step(req: LoginRequest, request: Request):
+    pending = sessions.get(req.session_token)
+    if not pending or 'expected_otp' not in pending:
+        return {"status": "error", "message": "Verification session not found. Please sign in again.", "restart": True}
+    if pending.get('expires_at', 0) <= now_ts():
+        sessions.pop(req.session_token, None)
+        return {"status": "error", "message": "Verification code expired. Please sign in again.", "restart": True}
+    if not hmac.compare_digest(str(req.otp).strip().encode(), pending['expected_otp'].encode()):
+        pending['otp_attempts'] = pending.get('otp_attempts', 0) + 1
+        if pending['otp_attempts'] >= OTP_MAX_ATTEMPTS:
+            sessions.pop(req.session_token, None)
+            log_audit_action(pending['user_id'], 'OTP_LOCKED', 'users', pending['user_id'], None, 'Too many OTP attempts', request.client.host)
+            return {"status": "error", "message": "Too many incorrect codes. Please sign in again.", "restart": True}
+        return {"status": "error", "message": "Invalid OTP. Please try again.", "otp_required": True}
+
+    sessions.pop(req.session_token, None)
+    token = new_session(pending['user_id'], pending['role'])
+    log_audit_action(pending['user_id'], 'LOGIN_SUCCESS', 'users', pending['user_id'], None, 'OTP Verified', request.client.host)
+    return {"status": "success", "redirect": DESTINATIONS.get(pending['role'], 'login.html'), "token": token, "role": pending['role']}
 
 @app.post("/api/login")
 def login(req: LoginRequest, request: Request):
     # OTP Verification Step
-    if req.session_token and req.session_token in sessions and req.otp:
-        session = sessions[req.session_token]
-        if session.get('expires_at', 0) <= datetime.datetime.now(datetime.timezone.utc).timestamp():
-            sessions.pop(req.session_token, None)
-            return {"status": "error", "message": "Session expired", "otp_required": True}
-        if req.otp == session['expected_otp']:
-            log_audit_action(session['user_id'], 'LOGIN_SUCCESS', 'users', session['user_id'], None, 'OTP Verified', request.client.host)
-            # Login success - convert to authenticated session
-            del session['expected_otp']
-            session['authenticated'] = True
-            destinations = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
-            return {"status": "success", "redirect": destinations.get(session['role'], 'login.html'), "token": req.session_token, "role": session['role']}
-        else:
-            return {"status": "error", "message": "Invalid OTP. Please try again.", "otp_required": True}
+    if req.session_token and req.otp:
+        return verify_otp_step(req, request)
 
     if not req.email or not req.password:
         return {"status": "error", "message": "Email and password are required."}
@@ -275,77 +624,68 @@ def login(req: LoginRequest, request: Request):
         raise HTTPException(status_code=503, detail="Database connection failed")
 
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (req.email,))
-    user = cursor.fetchone()
-
-    if not user:
-        cursor.close()
-        conn.close()
-        return {"status": "error", "message": "Invalid email or password."}
-
-    # Check lock
-    if user['locked_until'] and user['locked_until'] > datetime.datetime.now():
-        cursor.close()
-        conn.close()
-        return {"status": "error", "message": "Account locked due to too many failed attempts. Try again later."}
-
-    # Verify Password (Assumes bcrypt hashes generated by PHP match Python passlib. If testing with dummy data, ensure compatible hash)
-    # The dummy hash from seed.sql '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' is compatible with passlib if we replace '$2y$' with '$2b$'
-    hash_to_check = user['password_hash'].replace("$2y$", "$2b$") 
-    
     try:
-        is_valid = verify_password(req.password, user['password_hash'])
-    except Exception as e:
-        is_valid = False
+        user, error = authenticate(conn, cursor, req.email, req.password, request.client.host)
+        if error:
+            return {"status": "error", "message": error}
 
-    if is_valid:
-        # Check Password Aging
+        # Password aging: the user must choose a new password before getting a session.
         days_old = (datetime.datetime.now() - user['password_last_changed']).days
         if days_old > 90:
-            cursor.close()
-            conn.close()
-            return {"status": "success", "redirect": "change_password.html"}
-
-        cursor.execute("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = %s", (user['user_id'],))
-        conn.commit()
+            return {"status": "success", "redirect": "change_password.html", "password_change_required": True}
 
         if user['otp_enabled']:
-            otp = str(random.randint(100000, 999999))
-            token = str(uuid.uuid4())
+            otp = str(secrets.randbelow(900000) + 100000)
+            if not send_otp(user['email'], otp):
+                return JSONResponse(status_code=503, content={
+                    "status": "error",
+                    "message": "We could not send your verification code. Please try again later or contact support."})
+            token = secrets.token_urlsafe(32)
             sessions[token] = {
                 'user_id': user['user_id'],
                 'role': user['role'],
                 'expected_otp': otp,
-                'expires_at': datetime.datetime.now(datetime.timezone.utc).timestamp() + SESSION_TTL_SECONDS
+                'otp_attempts': 0,
+                'expires_at': now_ts() + OTP_TTL_SECONDS,
             }
-            cursor.close()
-            conn.close()
-            return {"status": "info", "otp_required": True, "message": f"OTP sent to your email. (For demo: {otp})", "session_token": token}
-        else:
-            token = str(uuid.uuid4())
-            sessions[token] = {
-                'user_id': user['user_id'],
-                'role': user['role'],
-                'authenticated': True,
-                'expires_at': datetime.datetime.now(datetime.timezone.utc).timestamp() + SESSION_TTL_SECONDS
-            }
-            log_audit_action(user['user_id'], 'LOGIN_SUCCESS', 'users', user['user_id'], None, None, request.client.host)
-            cursor.close()
-            conn.close()
-            destinations = {'Owner': 'owner_portal.html', 'Agent': 'agent_portal.html', 'Tenant': 'tenant_portal.html', 'Admin': 'dashboard.html'}
-            return {"status": "success", "redirect": destinations.get(user['role'], 'login.html'), "token": token, "role": user['role']}
-    else:
-        attempts = user['failed_login_attempts'] + 1
-        locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)) if attempts >= 5 else None
-        
-        cursor.execute("UPDATE users SET failed_login_attempts = %s, locked_until = %s WHERE user_id = %s", (attempts, locked_until, user['user_id']))
-        conn.commit()
-        
-        log_audit_action(user['user_id'], 'LOGIN_FAILED', 'users', user['user_id'], None, f"Attempt {attempts}", request.client.host)
-        
+            return {"status": "info", "otp_required": True,
+                    "message": "A verification code has been sent to your email address.", "session_token": token}
+
+        token = new_session(user['user_id'], user['role'])
+        log_audit_action(user['user_id'], 'LOGIN_SUCCESS', 'users', user['user_id'], None, None, request.client.host)
+        return {"status": "success", "redirect": DESTINATIONS.get(user['role'], 'login.html'), "token": token, "role": user['role']}
+    finally:
         cursor.close()
         conn.close()
-        return {"status": "error", "message": "Invalid email or password."}
+
+@app.post("/api/change_password")
+def change_password(req: ChangePasswordRequest, request: Request):
+    problem = validate_new_password(req.new_password, req.email)
+    if problem:
+        return err(problem)
+    if req.new_password == req.current_password:
+        return err("Your new password must be different from your current password.")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        user, error = authenticate(conn, cursor, req.email, req.current_password, request.client.host)
+        if error:
+            return err(error, 401)
+        cursor.execute("UPDATE users SET password_hash = %s, password_last_changed = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE user_id = %s",
+                       (hash_password(req.new_password), user['user_id']))
+        conn.commit()
+        purge_user_sessions(user['user_id'])
+        log_audit_action(user['user_id'], 'PASSWORD_CHANGED', 'users', user['user_id'], None, None, request.client.host)
+        return {"status": "success", "message": "Password updated. Please sign in with your new password.", "redirect": "login.html"}
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "change_password")
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.get("/api/dashboard")
 def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
@@ -371,7 +711,7 @@ def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
             new_inquiries = cursor.fetchone()['cnt']
             cursor.execute("SELECT COUNT(*) as cnt FROM inquiry")
             total_inquiries = cursor.fetchone()['cnt']
-            
+
             cursor.execute("""
                 SELECT i.inquiry_id, i.name, i.status, i.created_at, p.property_name
                 FROM inquiry i
@@ -382,7 +722,8 @@ def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
             for inq in recent_inquiries:
                 if inq.get('created_at'):
                     inq['created_at'] = str(inq['created_at'])
-        except:
+        except Exception as exc:
+            print(f"Dashboard inquiry section failed: {exc!r}")
             new_inquiries = 0
             total_inquiries = 0
             recent_inquiries = []
@@ -422,57 +763,81 @@ def get_dashboard(request: Request, admin: dict = Depends(get_admin_user)):
             }
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "dashboard")
+    finally:
+        cursor.close()
+        conn.close()
+
+def save_inquiry(data, property_id, subject=None):
+    """Validate and store a public message in the inquiry table. Returns an error response or None."""
+    name, error = text_field(data, 'name', 'Name', 255)
+    if error:
+        return err(error)
+    email, error = email_field(data)
+    if error:
+        return err(error)
+    phone, error = text_field(data, 'phone', 'Phone', 50, required=False)
+    if error:
+        return err(error)
+    message, error = text_field(data, 'message', 'Message', 5000)
+    if error:
+        return err(error)
+    if subject:
+        message = f"[{subject}] {message}"
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        if property_id is not None:
+            cursor.execute("SELECT property_id FROM property WHERE property_id = %s AND property_status = 'Published'", (property_id,))
+            if not cursor.fetchone():
+                return err("Property not found.", 404)
+        inquiry_id = str(uuid.uuid4())
+        cursor.execute("""
+            INSERT INTO inquiry (inquiry_id, property_id, name, email, phone, message, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+        """, (inquiry_id, property_id, name, email, phone or None, message))
+        conn.commit()
+        return inquiry_id
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "save_inquiry")
     finally:
         cursor.close()
         conn.close()
 
 @app.post("/api/contact")
 async def contact(request: Request):
-    data = await request.json()
-    name = data.get('name', '')
-    email = data.get('email', '')
-    subject = data.get('subject', '')
-    message = data.get('message', '')
+    data = await read_json_object(request)
+    if data is None:
+        return err("Invalid request.")
+    subject, error = text_field(data, 'subject', 'Subject', 200, required=False)
+    if error:
+        return err(error)
 
-    if not name or not email or not message:
-        return {"status": "error", "message": "Name, email, and message are required."}
-
-    # Log the contact message in the audit log
-    if not log_audit_action(None, 'CONTACT_FORM', 'inquiry', None, None, f"From: {name} <{email}> | Subject: {subject}", request.client.host):
-        raise HTTPException(status_code=503, detail="Could not save contact message")
-
+    # Contact-form messages are stored as general inquiries (no property) so the admin inbox shows them.
+    result = save_inquiry(data, None, subject or None)
+    if isinstance(result, JSONResponse):
+        return result
+    log_audit_action(None, 'CONTACT_FORM', 'inquiry', result, None, f"From: {data.get('email')}", request.client.host)
     return {"status": "success", "message": "Message received. We will get back to you soon."}
 
 @app.post("/api/submit_inquiry")
 async def submit_inquiry(request: Request):
-    data = await request.json()
-    name = data.get('name', '')
-    email = data.get('email', '')
-    message = data.get('message', '')
-    property_id = data.get('property_id', '')
+    data = await read_json_object(request)
+    if data is None:
+        return err("Invalid request.")
+    property_id, error = text_field(data, 'property_id', 'Property', 50)
+    if error:
+        return err(error)
 
-    if not name or not email or not message or not property_id:
-        return {"status": "error", "message": "All fields are required."}
-
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection failed")
-
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            INSERT INTO inquiry (inquiry_id, property_id, name, email, message, created_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
-        """, (str(uuid.uuid4()), property_id, name, email, message))
-        conn.commit()
-        log_audit_action(None, 'SUBMIT_INQUIRY', 'inquiry', property_id, None, f"From: {email}", request.client.host)
-        return {"status": "success", "message": "Inquiry submitted successfully."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-    finally:
-        cursor.close()
-        conn.close()
+    result = save_inquiry(data, property_id)
+    if isinstance(result, JSONResponse):
+        return result
+    log_audit_action(None, 'SUBMIT_INQUIRY', 'inquiry', result, None, f"From: {data.get('email')}", request.client.host)
+    return {"status": "success", "message": "Inquiry submitted successfully."}
 
 @app.post("/api/logout")
 def logout(user: dict = Depends(get_current_user)):
@@ -573,8 +938,8 @@ def get_owner_overview(owner: dict = Depends(get_owner_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Owner profile not found")
         cursor.execute("""
-                 SELECT property_id, property_name, city, country, location, latitude, longitude,
-                     property_status, price, currency, views, created_at
+            SELECT property_id, property_name, city, country, location, latitude, longitude,
+                   property_status, price, currency, views, created_at
             FROM property WHERE owner_id = %s ORDER BY created_at DESC
         """, (profile['owner_id'],))
         properties = cursor.fetchall()
@@ -614,9 +979,9 @@ def get_agent_overview(agent: dict = Depends(get_agent_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Agent profile not found")
         cursor.execute("""
-                 SELECT p.property_id, p.property_name, p.city, p.country, p.location,
-                     p.latitude, p.longitude, p.property_status, p.price, p.currency,
-                     p.views, p.created_at
+            SELECT p.property_id, p.property_name, p.city, p.country, p.location,
+                   p.latitude, p.longitude, p.property_status, p.price, p.currency,
+                   p.views, p.created_at
             FROM listing l
             JOIN advertised_as aa ON aa.listing_id = l.listing_id
             JOIN property p ON p.property_id = aa.property_id
@@ -660,19 +1025,20 @@ def get_tenant_overview(tenant: dict = Depends(get_tenant_user)):
         profile = cursor.fetchone()
         if not profile:
             raise HTTPException(status_code=404, detail="Tenant profile not found")
-        cursor.execute("""
-                 SELECT p.property_id, p.property_name, p.description, p.city, p.country,
-                     p.location, p.latitude, p.longitude, p.price, p.currency,
+        cursor.execute(f"""
+            SELECT p.property_id, p.property_name, p.description, p.city, p.country,
+                   p.location, p.latitude, p.longitude, p.price, p.currency,
                    p.property_status, p.is_featured, p.views, u.bedrooms, u.bathrooms,
-                     u.square_footage, u.monthly_rent, u.availability_status,
-                     m.url AS image_url,
-                     (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
-                      FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
-                      WHERE pam.property_id = p.property_id) AS amenities
+                   u.square_footage, u.monthly_rent, u.availability_status,
+                   m.url AS image_url,
+                   (SELECT GROUP_CONCAT(DISTINCT am.name ORDER BY am.name SEPARATOR ', ')
+                    FROM property_amenity pam JOIN amenity am ON am.amenity_id = pam.amenity_id
+                    WHERE pam.property_id = p.property_id) AS amenities
             FROM property p
-            LEFT JOIN unit u ON u.property_id = p.property_id
-            LEFT JOIN property_media m ON m.property_id = p.property_id AND m.is_featured = 1
-            WHERE p.property_status = 'Published' ORDER BY p.is_featured DESC, p.created_at DESC LIMIT 24
+            {PRIMARY_UNIT_JOIN}
+            {FEATURED_MEDIA_JOIN}
+            WHERE p.property_status = 'Published'
+            ORDER BY p.is_featured DESC, p.created_at DESC, p.property_id ASC LIMIT 24
         """)
         properties = cursor.fetchall()
         cursor.execute("""
@@ -782,6 +1148,7 @@ def get_owner_agreements(owner: dict = Depends(get_owner_user)):
         cursor.close()
         conn.close()
 
+
 @app.get("/api/admin/agents")
 def get_agents(admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
@@ -793,53 +1160,78 @@ def get_agents(admin: dict = Depends(get_admin_user)):
         agents = cursor.fetchall()
         return {"status": "success", "data": agents}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "get_agents")
     finally:
         cursor.close()
         conn.close()
 
 @app.post("/api/admin/agents")
 def create_agent(req: AgentCreate, admin: dict = Depends(get_admin_user)):
+    data = {"name": req.name, "phone_number": req.phone_number, "email": req.email}
+    name, error = text_field(data, 'name', 'Name', 255)
+    if error:
+        return err(error)
+    phone, error = text_field(data, 'phone_number', 'Phone number', 50)
+    if error:
+        return err(error)
+    email, error = email_field(data)
+    if error:
+        return err(error)
+    problem = validate_new_password(req.password, email)
+    if problem:
+        return err(problem)
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM users WHERE email = %s", (req.email,))
+        cursor.execute("SELECT user_id FROM users WHERE email = %s", (email,))
         if cursor.fetchone():
-            return {"status": "error", "message": "Email already registered"}
-            
+            return err("Email already registered")
+
         user_id = "AGT_U_" + str(uuid.uuid4())[:8]
         agent_id = "AGT_" + str(uuid.uuid4())[:8]
         password_hash = hash_password(req.password)
-        
-        cursor.execute("INSERT INTO users (user_id, email, password_hash, role) VALUES (%s, %s, %s, 'Agent')", (user_id, req.email, password_hash))
-        cursor.execute("INSERT INTO agent (agent_id, user_id, name, email, phone_number) VALUES (%s, %s, %s, %s, %s)", (agent_id, user_id, req.name, req.email, req.phone_number))
+
+        cursor.execute("INSERT INTO users (user_id, email, password_hash, role) VALUES (%s, %s, %s, 'Agent')", (user_id, email, password_hash))
+        cursor.execute("INSERT INTO agent (agent_id, user_id, name, email, phone_number) VALUES (%s, %s, %s, %s, %s)", (agent_id, user_id, name, email, phone))
         conn.commit()
-        
-        log_audit_action(admin['user_id'], 'CREATE_AGENT', 'agent', agent_id, None, f"Name: {req.name}", None)
+
+        log_audit_action(admin['user_id'], 'CREATE_AGENT', 'agent', agent_id, None, f"Name: {name}", None)
         return {"status": "success", "message": "Agent created successfully"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "create_agent")
     finally:
         cursor.close()
         conn.close()
 
 @app.put("/api/admin/agents/{agent_id}")
 def update_agent(agent_id: str, req: AgentUpdate, admin: dict = Depends(get_admin_user)):
+    data = {"name": req.name, "phone_number": req.phone_number}
+    name, error = text_field(data, 'name', 'Name', 255)
+    if error:
+        return err(error)
+    phone, error = text_field(data, 'phone_number', 'Phone number', 50)
+    if error:
+        return err(error)
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE agent SET name = %s, phone_number = %s WHERE agent_id = %s", (req.name, req.phone_number, agent_id))
+        cursor.execute("SELECT agent_id FROM agent WHERE agent_id = %s", (agent_id,))
+        if not cursor.fetchone():
+            return err("Agent not found", 404)
+        cursor.execute("UPDATE agent SET name = %s, phone_number = %s WHERE agent_id = %s", (name, phone, agent_id))
         conn.commit()
         log_audit_action(admin['user_id'], 'UPDATE_AGENT', 'agent', agent_id, None, f"Updated name/phone", None)
         return {"status": "success", "message": "Agent updated"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "update_agent")
     finally:
         cursor.close()
         conn.close()
@@ -851,19 +1243,39 @@ def delete_agent(agent_id: str, admin: dict = Depends(get_admin_user)):
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT user_id FROM agent WHERE agent_id = %s", (agent_id,))
+        cursor.execute("SELECT user_id, name FROM agent WHERE agent_id = %s", (agent_id,))
         agent = cursor.fetchone()
         if not agent:
-            return {"status": "error", "message": "Agent not found"}
-            
-        cursor.execute("DELETE FROM users WHERE user_id = %s", (agent['user_id'],))
+            return err("Agent not found", 404)
+
+        # Remove the agent record AND the login in one transaction (listings keep existing; their agent_id becomes NULL).
+        cursor.execute("DELETE FROM agent WHERE agent_id = %s", (agent_id,))
+        if agent['user_id']:
+            cursor.execute("DELETE FROM users WHERE user_id = %s", (agent['user_id'],))
         conn.commit()
-        
-        log_audit_action(admin['user_id'], 'DELETE_AGENT', 'agent', agent_id, None, None, None)
+        if agent['user_id']:
+            purge_user_sessions(agent['user_id'])
+
+        log_audit_action(admin['user_id'], 'DELETE_AGENT', 'agent', agent_id, agent['name'], None, None)
         return {"status": "success", "message": "Agent deleted"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "delete_agent")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/owners")
+def get_owners(admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT owner_id, name, email FROM owner ORDER BY name ASC")
+        return {"status": "success", "data": cursor.fetchall()}
+    except Exception as e:
+        return server_error(e, "get_owners")
     finally:
         cursor.close()
         conn.close()
@@ -874,17 +1286,54 @@ def get_admin_listings(admin: dict = Depends(get_admin_user)):
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.property_id, p.property_name, p.price, p.property_status, p.created_at, p.views
-        FROM property p ORDER BY p.created_at DESC
-    """)
-    listings = cursor.fetchall()
-    for l in listings:
-        if l.get('created_at'):
-            l['created_at'] = str(l['created_at'])
-    cursor.close()
-    conn.close()
-    return {"status": "success", "data": listings}
+    try:
+        cursor.execute("""
+            SELECT p.property_id, p.property_name, p.city, p.price, p.property_status, p.created_at, p.views
+            FROM property p ORDER BY p.created_at DESC
+        """)
+        listings = cursor.fetchall()
+        for l in listings:
+            if l.get('created_at'):
+                l['created_at'] = str(l['created_at'])
+        return {"status": "success", "data": listings}
+    finally:
+        cursor.close()
+        conn.close()
+
+def validate_listing_form(f, creating):
+    """Validate the raw admin listing form values. Returns (clean_dict, error_message)."""
+    clean = {}
+    for key, label, max_len, required in [
+        ('property_name', 'Property title', 255, True), ('description', 'Description', 10000, True),
+        ('street', 'Street', 255, False), ('district', 'District', 255, False),
+        ('city', 'City', 255, False), ('country', 'Country', 255, False),
+        ('amenities', 'Amenities', 2000, False)]:
+        value, error = text_field(f, key, label, max_len, required)
+        if error:
+            return None, error
+        clean[key] = value
+
+    status = (f.get('property_status') or '').strip()
+    if status not in PROPERTY_STATUSES:
+        return None, "Status must be one of: " + ", ".join(sorted(PROPERTY_STATUSES)) + "."
+    clean['property_status'] = status
+
+    if creating:
+        ptype = (f.get('property_type') or 'Apartment').strip()
+        if ptype not in PROPERTY_TYPES:
+            return None, "Property type must be one of: " + ", ".join(sorted(PROPERTY_TYPES)) + "."
+        clean['property_type'] = ptype
+
+    for key, label, low, high, integer in [
+        ('price', 'Price', 0.01, MAX_MONEY, False), ('bedrooms', 'Bedrooms', 0, 100, True),
+        ('bathrooms', 'Bathrooms', 0, 100, True), ('square_footage', 'Size', 0, 10000000, False),
+        ('monthly_rent', 'Monthly rent', 0, MAX_MONEY, False)]:
+        value, error = number_field(f.get(key, 0), label, low, high, integer)
+        if error:
+            return None, error
+        clean[key] = value
+    clean['owner_id'] = (f.get('owner_id') or '').strip()
+    return clean, None
 
 @app.post("/api/admin/listings")
 async def create_admin_listing(
@@ -902,59 +1351,70 @@ async def create_admin_listing(
     square_footage: float = Form(0),
     monthly_rent: float = Form(0),
     amenities: str = Form(""),
+    owner_id: str = Form(""),
     image: UploadFile = File(None),
     admin: dict = Depends(get_admin_user)
 ):
+    form = dict(property_name=property_name, description=description, price=price, property_status=property_status,
+                property_type=property_type, street=street, city=city, country=country, district=district,
+                bedrooms=bedrooms, bathrooms=bathrooms, square_footage=square_footage, monthly_rent=monthly_rent,
+                amenities=amenities, owner_id=owner_id)
+    clean, error = validate_listing_form(form, creating=True)
+    if error:
+        return err(error)
+    if not clean['owner_id']:
+        return err("Please choose the owner of this listing.")
+    try:
+        image_content, image_ext = await read_listing_image(image)
+    except ValueError as exc:
+        return err(str(exc))
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
+    saved_file = None
     try:
-        # Get a default owner
-        cursor.execute("SELECT owner_id FROM owner LIMIT 1")
-        owner_res = cursor.fetchone()
-        if not owner_res:
-            return {"status": "error", "message": "No owners exist in the system to assign this property to."}
-        owner_id = owner_res['owner_id']
+        cursor.execute("SELECT owner_id FROM owner WHERE owner_id = %s", (clean['owner_id'],))
+        if not cursor.fetchone():
+            return err("The selected owner does not exist.")
 
         property_id = "PROP_" + str(uuid.uuid4())[:8]
         cursor.execute("""
             INSERT INTO property (property_id, property_name, description, price, property_status, street, district, city, country, owner_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (property_id, property_name, description, price, property_status, street, district, city, country, owner_id))
-        
+        """, (property_id, clean['property_name'], clean['description'], clean['price'], clean['property_status'],
+              clean['street'], clean['district'], clean['city'], clean['country'], clean['owner_id']))
+
         # Insert into subtype table
-        if property_type == "Apartment":
-            cursor.execute("INSERT INTO apartment (property_id, amenities) VALUES (%s, %s)", (property_id, amenities))
-        elif property_type == "Condominium":
-            cursor.execute("INSERT INTO condominium (property_id, amenities) VALUES (%s, %s)", (property_id, amenities))
-        elif property_type == "Rental House":
+        if clean['property_type'] == "Apartment":
+            cursor.execute("INSERT INTO apartment (property_id, amenities) VALUES (%s, %s)", (property_id, clean['amenities']))
+        elif clean['property_type'] == "Condominium":
+            cursor.execute("INSERT INTO condominium (property_id, amenities) VALUES (%s, %s)", (property_id, clean['amenities']))
+        elif clean['property_type'] == "Rental House":
             cursor.execute("INSERT INTO rental_house (property_id) VALUES (%s)", (property_id,))
 
         # Insert a unit record with room/size details
-        if bedrooms or bathrooms or square_footage or monthly_rent:
+        if clean['bedrooms'] or clean['bathrooms'] or clean['square_footage'] or clean['monthly_rent']:
             cursor.execute("""
                 INSERT INTO unit (property_id, unit_number, bedrooms, bathrooms, square_footage, monthly_rent, availability_status)
                 VALUES (%s, 'MAIN', %s, %s, %s, %s, 'Available')
-            """, (property_id, bedrooms, bathrooms, square_footage, monthly_rent or price))
-        
-        # Save image if provided
-        if image and image.filename:
-            ext = image.filename.split('.')[-1]
-            filename = f"{property_id}_{uuid.uuid4().hex}.{ext}"
-            filepath = f"static/uploads/{filename}"
-            with open(filepath, "wb") as f:
-                content = await image.read()
-                f.write(content)
+            """, (property_id, clean['bedrooms'], clean['bathrooms'], clean['square_footage'], clean['monthly_rent'] or clean['price']))
+
+        # Save image if provided (type already verified from the file's own bytes)
+        if image_content:
+            saved_file = write_listing_image(property_id, image_content, image_ext)
             cursor.execute("INSERT INTO property_media (media_id, property_id, url, type, is_featured) VALUES (%s, %s, %s, 'IMAGE', 1)",
-                           (str(uuid.uuid4()), property_id, f"/uploads/{filename}"))
-                           
+                           (str(uuid.uuid4()), property_id, f"/uploads/{saved_file}"))
+
         conn.commit()
-        log_audit_action(admin['user_id'], 'CREATE_PROPERTY', 'property', property_id, None, f"Name: {property_name}", None)
+        log_audit_action(admin['user_id'], 'CREATE_PROPERTY', 'property', property_id, None, f"Name: {clean['property_name']}", None)
         return {"status": "success", "message": "Property added successfully"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        return server_error(e, "create_admin_listing")
     finally:
         cursor.close()
         conn.close()
@@ -966,18 +1426,18 @@ def get_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT p.*, u.bedrooms, u.bathrooms, u.square_footage, u.monthly_rent,
                    COALESCE(a.amenities, c.amenities, '') as amenities
             FROM property p
-            LEFT JOIN unit u ON p.property_id = u.property_id
+            {PRIMARY_UNIT_JOIN}
             LEFT JOIN apartment a ON p.property_id = a.property_id
             LEFT JOIN condominium c ON p.property_id = c.property_id
             WHERE p.property_id = %s
         """, (property_id,))
         prop = cursor.fetchone()
         if not prop:
-            return {"status": "error", "message": "Not found"}
+            return err("Not found", 404)
         if prop.get('created_at'):
             prop['created_at'] = str(prop['created_at'])
         return {"status": "success", "data": prop}
@@ -1001,58 +1461,88 @@ async def update_admin_listing(
     square_footage: float = Form(0),
     monthly_rent: float = Form(0),
     amenities: str = Form(""),
+    owner_id: str = Form(""),
     image: UploadFile = File(None),
     admin: dict = Depends(get_admin_user)
 ):
+    form = dict(property_name=property_name, description=description, price=price, property_status=property_status,
+                street=street, city=city, country=country, district=district, bedrooms=bedrooms, bathrooms=bathrooms,
+                square_footage=square_footage, monthly_rent=monthly_rent, amenities=amenities, owner_id=owner_id)
+    clean, error = validate_listing_form(form, creating=False)
+    if error:
+        return err(error)
+    try:
+        image_content, image_ext = await read_listing_image(image)
+    except ValueError as exc:
+        return err(str(exc))
+
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
+    saved_file = None
+    replaced_urls = []
     try:
+        cursor.execute("SELECT property_id FROM property WHERE property_id = %s", (property_id,))
+        if not cursor.fetchone():
+            return err("Property not found.", 404)
+        if clean['owner_id']:
+            cursor.execute("SELECT owner_id FROM owner WHERE owner_id = %s", (clean['owner_id'],))
+            if not cursor.fetchone():
+                return err("The selected owner does not exist.")
+            cursor.execute("UPDATE property SET owner_id=%s WHERE property_id=%s", (clean['owner_id'], property_id))
+
         cursor.execute("""
             UPDATE property SET property_name=%s, description=%s, price=%s, property_status=%s,
             street=%s, district=%s, city=%s, country=%s
             WHERE property_id=%s
-        """, (property_name, description, price, property_status, street, district, city, country, property_id))
+        """, (clean['property_name'], clean['description'], clean['price'], clean['property_status'],
+              clean['street'], clean['district'], clean['city'], clean['country'], property_id))
 
-        # Update or insert unit
-        cursor.execute("SELECT property_id FROM unit WHERE property_id=%s LIMIT 1", (property_id,))
-        if cursor.fetchone():
+        # Update ONLY the property's primary unit (the one shown in the edit form); other units are left untouched.
+        cursor.execute(f"""
+            SELECT u2.unit_number, u2.monthly_rent FROM unit u2 WHERE u2.property_id = %s
+            ORDER BY {PRIMARY_UNIT_ORDER} LIMIT 1
+        """, (property_id,))
+        primary = cursor.fetchone()
+        if primary:
+            rent = clean['monthly_rent'] or primary['monthly_rent'] or clean['price']
             cursor.execute("""
                 UPDATE unit SET bedrooms=%s, bathrooms=%s, square_footage=%s, monthly_rent=%s
-                WHERE property_id=%s
-            """, (bedrooms, bathrooms, square_footage, monthly_rent or price, property_id))
+                WHERE property_id=%s AND unit_number=%s
+            """, (clean['bedrooms'], clean['bathrooms'], clean['square_footage'], rent, property_id, primary['unit_number']))
         else:
             cursor.execute("""
                 INSERT INTO unit (property_id, unit_number, bedrooms, bathrooms, square_footage, monthly_rent, availability_status)
                 VALUES (%s, 'MAIN', %s, %s, %s, %s, 'Available')
-            """, (property_id, bedrooms, bathrooms, square_footage, monthly_rent or price))
+            """, (property_id, clean['bedrooms'], clean['bathrooms'], clean['square_footage'], clean['monthly_rent'] or clean['price']))
 
         # Update amenities
-        cursor.execute("UPDATE apartment SET amenities=%s WHERE property_id=%s", (amenities, property_id))
-        cursor.execute("UPDATE condominium SET amenities=%s WHERE property_id=%s", (amenities, property_id))
+        cursor.execute("UPDATE apartment SET amenities=%s WHERE property_id=%s", (clean['amenities'], property_id))
+        cursor.execute("UPDATE condominium SET amenities=%s WHERE property_id=%s", (clean['amenities'], property_id))
 
-        # New image
-        if image and image.filename:
-            ext = image.filename.split('.')[-1]
-            filename = f"{property_id}_{uuid.uuid4().hex}.{ext}"
-            filepath = f"static/uploads/{filename}"
-            with open(filepath, "wb") as f:
-                content = await image.read()
-                f.write(content)
-            cursor.execute("DELETE FROM property_media WHERE property_id=%s", (property_id,))
+        # New image: replaces the current featured image only; the rest of the gallery is kept.
+        if image_content:
+            cursor.execute("SELECT url FROM property_media WHERE property_id=%s AND is_featured=1", (property_id,))
+            replaced_urls = [row['url'] for row in cursor.fetchall()]
+            saved_file = write_listing_image(property_id, image_content, image_ext)
+            cursor.execute("DELETE FROM property_media WHERE property_id=%s AND is_featured=1", (property_id,))
             cursor.execute("INSERT INTO property_media (media_id, property_id, url, type, is_featured) VALUES (%s, %s, %s, 'IMAGE', 1)",
-                           (str(uuid.uuid4()), property_id, f"/uploads/{filename}"))
+                           (str(uuid.uuid4()), property_id, f"/uploads/{saved_file}"))
 
         conn.commit()
-        log_audit_action(admin['user_id'], 'UPDATE_PROPERTY', 'property', property_id, None, f"Updated: {property_name}", None)
-        return {"status": "success", "message": "Property updated successfully"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        if saved_file:
+            (UPLOAD_DIR / saved_file).unlink(missing_ok=True)
+        return server_error(e, "update_admin_listing")
     finally:
         cursor.close()
         conn.close()
+
+    delete_upload_files(replaced_urls)
+    log_audit_action(admin['user_id'], 'UPDATE_PROPERTY', 'property', property_id, None, f"Updated: {clean['property_name']}", None)
+    return {"status": "success", "message": "Property updated successfully"}
 
 @app.delete("/api/admin/listings/{property_id}")
 def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
@@ -1061,16 +1551,24 @@ def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT property_name FROM property WHERE property_id = %s", (property_id,))
+        prop = cursor.fetchone()
+        if not prop:
+            return err("Property not found.", 404)
+        cursor.execute("SELECT url FROM property_media WHERE property_id = %s", (property_id,))
+        media_urls = [row['url'] for row in cursor.fetchall()]
         cursor.execute("DELETE FROM property WHERE property_id = %s", (property_id,))
         conn.commit()
-        log_audit_action(admin['user_id'], 'DELETE_PROPERTY', 'property', property_id, None, None, None)
-        return {"status": "success", "message": "Property deleted successfully"}
     except Exception as e:
         conn.rollback()
-        return {"status": "error", "message": str(e)}
+        return server_error(e, "delete_admin_listing")
     finally:
         cursor.close()
         conn.close()
+
+    delete_upload_files(media_urls)
+    log_audit_action(admin['user_id'], 'DELETE_PROPERTY', 'property', property_id, prop['property_name'], None, None)
+    return {"status": "success", "message": "Property deleted successfully"}
 
 @app.get("/api/admin/inquiries")
 def get_admin_inquiries(admin: dict = Depends(get_admin_user)):
@@ -1097,21 +1595,59 @@ def get_admin_inquiries(admin: dict = Depends(get_admin_user)):
 
 @app.put("/api/admin/inquiries/{inquiry_id}/status")
 async def update_inquiry_status(inquiry_id: str, request: Request, admin: dict = Depends(get_admin_user)):
-    data = await request.json()
+    data = await read_json_object(request)
+    if data is None:
+        return err("Invalid request.")
     new_status = data.get('status', 'IN_PROGRESS')
-    if new_status not in {'NEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'}:
-        raise HTTPException(status_code=400, detail="Invalid inquiry status")
+    if new_status == 'READ':
+        new_status = 'IN_PROGRESS'
+    if new_status not in INQUIRY_STATUSES:
+        return err("Status must be one of: " + ", ".join(sorted(INQUIRY_STATUSES)) + ".")
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT inquiry_id FROM inquiry WHERE inquiry_id = %s", (inquiry_id,))
+        if not cursor.fetchone():
+            return err("Inquiry not found.", 404)
         cursor.execute("UPDATE inquiry SET status=%s WHERE inquiry_id=%s", (new_status, inquiry_id))
         conn.commit()
         return {"status": "success", "message": "Status updated"}
     finally:
         cursor.close()
         conn.close()
+
+# Warn loudly if the well-known demo accounts from seed.sql / test_users.sql exist in production.
+DEMO_ACCOUNT_EMAILS = (
+    "owner@homefind.com", "admin@homefind.com", "agent@homefind.com", "tenant@homefind.com",
+    "test_admin@homefind.com", "test_owner@homefind.com", "test_agent@homefind.com", "test_tenant@homefind.com",
+)
+
+def find_demo_accounts():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor()
+    try:
+        marks = ", ".join(["%s"] * len(DEMO_ACCOUNT_EMAILS))
+        cursor.execute(f"SELECT email FROM users WHERE email IN ({marks})", DEMO_ACCOUNT_EMAILS)
+        return [row['email'] for row in cursor.fetchall()]
+    except Exception as exc:
+        print(f"Could not check for demo accounts: {exc!r}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.on_event("startup")
+def warn_about_demo_accounts():
+    if APP_ENV != "production":
+        return
+    found = find_demo_accounts()
+    if found:
+        print("WARNING: demo/test accounts with publicly known passwords exist in this PRODUCTION database: "
+              + ", ".join(found) + ". Delete them or change their passwords immediately.")
 
 # Mount static files at root
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

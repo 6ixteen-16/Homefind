@@ -105,6 +105,7 @@
         </div>
     </div>
 
+    <script src="esc.js"></script>
     <script>
         const token = localStorage.getItem('auth_token');
         if (!token) window.location.href = 'login.html';
@@ -131,12 +132,12 @@
                         }
                         tbody.innerHTML = res.data.map(agent => `
                             <tr>
-                                <td style="font-weight: 500;">${agent.name}</td>
-                                <td>${agent.email}</td>
-                                <td>${agent.phone_number}</td>
+                                <td style="font-weight: 500;">${esc(agent.name)}</td>
+                                <td>${esc(agent.email)}</td>
+                                <td>${esc(agent.phone_number)}</td>
                                 <td style="text-align: right; gap: 0.5rem; display: flex; justify-content: flex-end;">
-                                    <button class="action-btn" onclick="editAgent('${agent.agent_id}', '${agent.name}', '${agent.phone_number}')">Edit</button>
-                                    <button class="action-btn delete" onclick="deleteAgent('${agent.agent_id}')">Delete</button>
+                                    <button class="action-btn" data-action="edit" data-id="${esc(agent.agent_id)}" data-name="${esc(agent.name)}" data-phone="${esc(agent.phone_number)}">Edit</button>
+                                    <button class="action-btn delete" data-action="delete" data-id="${esc(agent.agent_id)}">Delete</button>
                                 </td>
                             </tr>
                         `).join('');
@@ -212,6 +213,14 @@
             localStorage.removeItem('auth_token');
             window.location.href = 'login.html';
         }
+
+        // Buttons carry their data in data-* attributes (never inside inline JavaScript strings).
+        document.querySelector('#agents-table tbody').addEventListener('click', function(e) {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            if (btn.dataset.action === 'edit') editAgent(btn.dataset.id, btn.dataset.name, btn.dataset.phone);
+            else if (btn.dataset.action === 'delete') deleteAgent(btn.dataset.id);
+        });
 
         document.addEventListener('DOMContentLoaded', fetchAgents);
     </script>
