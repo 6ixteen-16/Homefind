@@ -7,6 +7,7 @@ import os
 import mimetypes
 from pathlib import Path
 from dotenv import load_dotenv
+from backup_sync import DualSyncConnection
 
 load_dotenv()
 
@@ -270,7 +271,7 @@ def validate_new_password(password, email=None):
 # Connect to Database
 def get_db_connection():
     try:
-        return pymysql.connect(
+        conn = pymysql.connect(
             host=DB_HOST,
             port=DB_PORT,
             user=DB_USER,
@@ -278,6 +279,7 @@ def get_db_connection():
             database=DB_NAME,
             cursorclass=pymysql.cursors.DictCursor
         )
+        return DualSyncConnection(conn)
     except Exception as e:
         print(f"Error connecting to MySQL: {e}")
         return None

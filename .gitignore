@@ -9,3 +9,4 @@ static/uploads/*
 chat_history.md
 fastapi_version/
 php_version/
+data/
