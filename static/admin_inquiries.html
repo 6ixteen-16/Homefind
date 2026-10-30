@@ -151,6 +151,8 @@
 
         let inquiryCache = {};
 
+        const STATUS_LABELS = { NEW: 'New', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed' };
+
         function fetchInquiries() {
             const filter = document.getElementById('status-filter').value;
             fetch('/api/admin/inquiries', { headers: apiHeaders })
@@ -186,7 +188,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <span class="badge ${badge}">${esc(inq.status)}</span>
+                                <span class="badge ${badge}">${esc(STATUS_LABELS[inq.status] || inq.status)}</span>
                             </div>
 
                             <div class="inquiry-message">${esc(inq.message)}</div>
@@ -227,7 +229,7 @@
                 body: JSON.stringify({ status })
             }).then(res => res.json()).then(res => {
                 if (res.status === 'success') fetchInquiries();
-                else alert(res.message);
+                else alert(apiErr(res));
             });
         }
 
@@ -244,19 +246,26 @@
             ctx.append(from, ` ${inq.name} (${inq.email})`, document.createElement('br'),
                        msg, ` ${excerpt}${String(inq.message || '').length > 80 ? '...' : ''}`);
             document.getElementById('reply-modal').style.display = 'flex';
-            // Auto-mark as in progress
-            markStatus(inq.inquiry_id, 'IN_PROGRESS');
+            // Silently mark as in-progress without re-rendering the list while the modal is open
+            fetch(`/api/admin/inquiries/${encodeURIComponent(inq.inquiry_id)}/status`, {
+                method: 'PUT',
+                headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'IN_PROGRESS' })
+            }).catch(() => {});
         }
 
 
         function closeReplyModal() {
             document.getElementById('reply-modal').style.display = 'none';
+            fetchInquiries(); // Refresh list now that modal is closed
         }
 
         function sendReply() {
             const to = document.getElementById('reply-to').value;
             const subject = encodeURIComponent(document.getElementById('reply-subject').value);
-            const body = encodeURIComponent(document.getElementById('reply-message').value + '\n\nBest regards,\nHomefind Team\ninfo@homefind.com | +256700373070');
+            const messageText = document.getElementById('reply-message').value.trim();
+            if (!messageText) { alert('Please type a reply message before sending.'); return; }
+            const body = encodeURIComponent(messageText + '\n\nBest regards,\nHomefind Team\ninfo@homefind.com | +256700373070');
             window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
             closeReplyModal();
         }

@@ -12,25 +12,38 @@
         .sidebar a { display: block; padding: 0.75rem 1rem; color: var(--text-color); text-decoration: none; border-radius: 8px; margin-bottom: 0.5rem; font-weight: 500; transition: all 0.2s; }
         .sidebar a:hover, .sidebar a.active { background: #f3f4f6; color: var(--primary-color); }
         .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        
+
         .panel { background: var(--white); border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; }
         table { width: 100%; border-collapse: collapse; }
         th { text-align: left; padding: 1rem 1.5rem; background: #f9fafb; font-weight: 600; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid #e5e7eb; }
         td { padding: 0.85rem 1.5rem; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
         tr:hover td { background: #f9fafb; }
-        
-        .action-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; color: var(--text-muted); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.8rem; margin-left: 0.3rem; }
+
+        /* Generic action buttons */
+        .action-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; color: var(--text-muted); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.8rem; margin-left: 0.3rem; transition: all 0.15s; }
         .action-btn:hover { background: #e5e7eb; color: var(--text-color); }
         .action-btn.delete:hover { color: #dc2626; background: #fee2e2; border-color: #fca5a5; }
         .action-btn.edit:hover { color: #1d4ed8; background: #eff6ff; border-color: #93c5fd; }
+        /* Publish / Reject quick-action buttons (Draft rows only) */
+        .action-btn.publish { color: #fff; background: #107754; border-color: #107754; font-weight: 600; }
+        .action-btn.publish:hover { background: #0c5c40; border-color: #0c5c40; }
+        .action-btn.reject { color: #fff; background: #dc2626; border-color: #dc2626; font-weight: 600; }
+        .action-btn.reject:hover { background: #b91c1c; border-color: #b91c1c; }
 
         .badge { padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; border: 1px solid transparent; }
-        .badge-pub { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
-        .badge-draft { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+        .badge-pub     { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+        .badge-draft   { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+        .badge-archive { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+
         .listing-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #e5e7eb; }
         .listing-filters label { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.85rem; }
         .listing-filters select { padding: 0.45rem 0.65rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; }
         #listing-result-count { margin-left: auto; color: var(--text-muted); font-size: 0.85rem; }
+
+        /* Pending review banner */
+        #pending-banner { display: none; align-items: center; gap: 0.75rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 10px; padding: 0.75rem 1.25rem; margin-bottom: 1.5rem; font-size: 0.9rem; color: #92400e; }
+        #pending-banner strong { font-weight: 700; }
+        #pending-banner a { color: #92400e; font-weight: 700; text-decoration: underline; cursor: pointer; }
 
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 50; }
         .modal { background: var(--white); padding: 2rem; border-radius: 12px; width: 680px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; }
@@ -64,9 +77,15 @@
             <div class="header-section">
                 <div>
                     <h1 style="font-weight: 300; font-size: 2.2rem; margin-bottom: 0.5rem;">Listings</h1>
-                    <p style="color: var(--text-muted);">Manage all property listings on the platform.</p>
+                    <p style="color: var(--text-muted);">Manage all property listings. Publish owner-submitted drafts or reject them.</p>
                 </div>
                 <button class="btn-primary" onclick="openModal()" style="background: #d97706;">+ New Listing</button>
+            </div>
+
+            <!-- Pending review alert banner -->
+            <div id="pending-banner">
+                <span>📋</span>
+                <span><strong id="pending-count">0</strong> listing(s) are awaiting your review. <a onclick="filterToDraft()">Show pending →</a></span>
             </div>
 
             <div class="panel">
@@ -74,8 +93,9 @@
                     <label for="status-filter">Status
                         <select id="status-filter">
                             <option value="">All listings</option>
-                            <option value="Published">Active</option>
-                            <option value="Draft">Draft</option>
+                            <option value="Draft">⏳ Pending Review</option>
+                            <option value="Published">✅ Published</option>
+                            <option value="Archived">🗄 Archived</option>
                         </select>
                     </label>
                     <label for="sort-order">Sort
@@ -90,6 +110,7 @@
                     <thead>
                         <tr>
                             <th>Property Name</th>
+                            <th>Owner</th>
                             <th>City</th>
                             <th>Price</th>
                             <th>Status</th>
@@ -98,7 +119,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading listings...</td></tr>
+                        <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading listings...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -117,7 +138,7 @@
                     <label>Property Title *</label>
                     <input type="text" name="property_name" id="f-name" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label>Description *</label>
                     <textarea name="description" id="f-desc" rows="3" required></textarea>
@@ -224,6 +245,7 @@
 
         const apiHeaders = { 'Authorization': 'Bearer ' + token };
         let editingId = null;
+        let allListings = [];
 
         // Fill the owner drop-down (text is inserted with textContent, never as HTML).
         function loadOwners() {
@@ -248,44 +270,86 @@
         }
         const ownersReady = loadOwners();
 
+        function badgeClass(status) {
+            if (status === 'Published') return 'badge badge-pub';
+            if (status === 'Draft')     return 'badge badge-draft';
+            return 'badge badge-archive';
+        }
+
+        function badgeLabel(status) {
+            if (status === 'Published') return 'Published';
+            if (status === 'Draft')     return 'Awaiting Review';
+            return status;
+        }
+
+        function renderListings(listings) {
+            const tbody = document.querySelector('#listings-table tbody');
+            document.getElementById('listing-result-count').textContent =
+                `${listings.length} ${listings.length === 1 ? 'listing' : 'listings'}`;
+
+            if (listings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">No listings found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = listings.map(listing => {
+                const isDraft = listing.property_status === 'Draft';
+                // Quick-action buttons for drafts; standard edit/delete for others
+                const reviewBtns = isDraft
+                    ? `<button class="action-btn publish" data-action="publish" data-id="${esc(listing.property_id)}" title="Publish this listing">✓ Publish</button>
+                       <button class="action-btn reject"  data-action="reject"  data-id="${esc(listing.property_id)}" title="Reject and archive">✗ Reject</button>`
+                    : '';
+                return `
+                    <tr>
+                        <td style="font-weight: 500;">${esc(listing.property_name)}</td>
+                        <td style="color: var(--text-muted); font-size: 0.82rem;">${esc(listing.owner_name || '—')}</td>
+                        <td style="color: var(--text-muted);">${esc(listing.city || '—')}</td>
+                        <td>$${parseFloat(listing.price || 0).toLocaleString()}</td>
+                        <td><span class="${badgeClass(listing.property_status)}">${badgeLabel(listing.property_status)}</span></td>
+                        <td>${listing.views || 0}</td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            ${reviewBtns}
+                            <button class="action-btn edit"   data-action="edit"   data-id="${esc(listing.property_id)}">Edit</button>
+                            <button class="action-btn delete" data-action="delete" data-id="${esc(listing.property_id)}">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function applyFilters() {
+            const status = document.getElementById('status-filter').value;
+            const sort   = document.getElementById('sort-order').value;
+            const filtered = allListings
+                .filter(l => !status || l.property_status === status)
+                .sort((a, b) => sort === 'views'
+                    ? (Number(b.views) || 0) - (Number(a.views) || 0)
+                    : new Date(b.created_at) - new Date(a.created_at));
+            renderListings(filtered);
+        }
+
         function fetchListings() {
             fetch('/api/admin/listings', { headers: apiHeaders })
                 .then(res => res.json())
                 .then(res => {
-                    const tbody = document.querySelector('#listings-table tbody');
-                    if (res.status === 'success') {
-                        const status = document.getElementById('status-filter').value;
-                        const sort = document.getElementById('sort-order').value;
-                        const listings = res.data
-                            .filter(listing => !status || listing.property_status === status)
-                            .sort((a, b) => sort === 'views'
-                                ? (Number(b.views) || 0) - (Number(a.views) || 0)
-                                : new Date(b.created_at) - new Date(a.created_at));
-                        document.getElementById('listing-result-count').textContent =
-                            `${listings.length} ${listings.length === 1 ? 'listing' : 'listings'}`;
-                        if (listings.length === 0) {
-                            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">No listings found.</td></tr>';
-                            return;
-                        }
-                        tbody.innerHTML = listings.map(listing => `
-                            <tr>
-                                <td style="font-weight: 500;">
-                                    <a href="admin_listings.html?edit=${esc(encodeURIComponent(listing.property_id))}" style="color: inherit; text-decoration: none;">${esc(listing.property_name)}</a>
-                                </td>
-                                <td style="color: var(--text-muted);">${esc(listing.city || '—')}</td>
-                                <td>$${parseFloat(listing.price || 0).toLocaleString()}</td>
-                                <td><span class="badge ${listing.property_status === 'Published' ? 'badge-pub' : 'badge-draft'}">${esc(listing.property_status)}</span></td>
-                                <td>${listing.views || 0}</td>
-                                <td style="text-align: right;">
-                                    <button class="action-btn edit" data-action="edit" data-id="${esc(listing.property_id)}">Edit</button>
-                                    <button class="action-btn delete" data-action="delete" data-id="${esc(listing.property_id)}">Delete</button>
-                                </td>
-                            </tr>
-                        `).join('');
+                    if (res.status !== 'success') { alert('Error: ' + apiErr(res)); return; }
+                    allListings = res.data;
+                    // Show/hide the pending review banner
+                    const draftCount = allListings.filter(l => l.property_status === 'Draft').length;
+                    const banner = document.getElementById('pending-banner');
+                    if (draftCount > 0) {
+                        document.getElementById('pending-count').textContent = draftCount;
+                        banner.style.display = 'flex';
                     } else {
-                        alert('Error: ' + res.message);
+                        banner.style.display = 'none';
                     }
+                    applyFilters();
                 });
+        }
+
+        function filterToDraft() {
+            document.getElementById('status-filter').value = 'Draft';
+            applyFilters();
         }
 
         function openModal() {
@@ -303,25 +367,25 @@
             fetch(`/api/admin/listings/${id}`, { headers: apiHeaders })
                 .then(res => res.json())
                 .then(res => {
-                    if (res.status !== 'success') { alert(res.message); return; }
+                    if (res.status !== 'success') { alert(apiErr(res)); return; }
                     const p = res.data;
                     editingId = id;
                     document.getElementById('editing-id').value = id;
                     document.getElementById('modal-title').innerText = 'Edit Listing';
                     document.getElementById('save-btn').innerText = 'Update Listing';
-                    
-                    document.getElementById('f-name').value = p.property_name || '';
-                    document.getElementById('f-desc').value = p.description || '';
-                    document.getElementById('f-status').value = p.property_status || 'Published';
-                    document.getElementById('f-price').value = p.price || '';
-                    document.getElementById('f-rent').value = p.monthly_rent || '';
-                    document.getElementById('f-street').value = p.street || '';
+
+                    document.getElementById('f-name').value     = p.property_name || '';
+                    document.getElementById('f-desc').value     = p.description || '';
+                    document.getElementById('f-status').value   = p.property_status || 'Published';
+                    document.getElementById('f-price').value    = p.price || '';
+                    document.getElementById('f-rent').value     = p.monthly_rent || '';
+                    document.getElementById('f-street').value   = p.street || '';
                     document.getElementById('f-district').value = p.district || '';
-                    document.getElementById('f-city').value = p.city || '';
-                    document.getElementById('f-country').value = p.country || '';
-                    document.getElementById('f-beds').value = p.bedrooms || 0;
-                    document.getElementById('f-baths').value = p.bathrooms || 0;
-                    document.getElementById('f-sqft').value = p.square_footage || 0;
+                    document.getElementById('f-city').value     = p.city || '';
+                    document.getElementById('f-country').value  = p.country || '';
+                    document.getElementById('f-beds').value     = p.bedrooms || 0;
+                    document.getElementById('f-baths').value    = p.bathrooms || 0;
+                    document.getElementById('f-sqft').value     = p.square_footage || 0;
                     document.getElementById('f-amenities').value = p.amenities || '';
                     ownersReady.then(() => { document.getElementById('f-owner').value = p.owner_id || ''; });
                     document.getElementById('image-label').innerText = 'Replace Featured Image (optional)';
@@ -341,8 +405,26 @@
                 .then(res => res.json())
                 .then(res => {
                     if (res.status === 'success') fetchListings();
-                    else alert(res.message);
+                    else alert(apiErr(res));
                 });
+        }
+
+        async function publishListing(id, name) {
+            if (!confirm(`Publish "${name}"?\n\nIt will appear on Browse immediately.`)) return;
+            const res = await fetch(`/api/admin/listings/${encodeURIComponent(id)}/publish`, {
+                method: 'PUT', headers: apiHeaders
+            }).then(r => r.json());
+            if (res.status === 'success') fetchListings();
+            else alert('Error: ' + apiErr(res));
+        }
+
+        async function rejectListing(id, name) {
+            if (!confirm(`Reject "${name}"?\n\nIt will be archived and removed from the owner's active drafts.`)) return;
+            const res = await fetch(`/api/admin/listings/${encodeURIComponent(id)}/reject`, {
+                method: 'PUT', headers: apiHeaders
+            }).then(r => r.json());
+            if (res.status === 'success') fetchListings();
+            else alert('Error: ' + apiErr(res));
         }
 
         document.getElementById('listing-form').addEventListener('submit', function(e) {
@@ -369,7 +451,7 @@
                     closeModal();
                     fetchListings();
                 } else {
-                    alert('Error: ' + res.message);
+                    alert('Error: ' + apiErr(res));
                 }
             })
             .catch(err => {
@@ -390,21 +472,29 @@
         document.querySelector('#listings-table tbody').addEventListener('click', function(e) {
             const btn = e.target.closest('button[data-action]');
             if (!btn) return;
-            if (btn.dataset.action === 'edit') editListing(btn.dataset.id);
-            else if (btn.dataset.action === 'delete') deleteListing(btn.dataset.id);
+            const id   = btn.dataset.id;
+            // Look up listing name for confirmation dialogs
+            const row  = btn.closest('tr');
+            const name = row ? row.querySelector('td:first-child').textContent.trim() : id;
+            if      (btn.dataset.action === 'edit')    editListing(id);
+            else if (btn.dataset.action === 'delete')  deleteListing(id);
+            else if (btn.dataset.action === 'publish') publishListing(id, name);
+            else if (btn.dataset.action === 'reject')  rejectListing(id, name);
         });
 
         document.addEventListener('DOMContentLoaded', async function() {
             const params = new URLSearchParams(window.location.search);
             const requestedStatus = params.get('status');
-            if (['Published', 'Draft'].includes(requestedStatus)) {
+            if (['Published', 'Draft', 'Archived'].includes(requestedStatus)) {
                 document.getElementById('status-filter').value = requestedStatus;
             }
             if (params.get('sort') === 'views') {
                 document.getElementById('sort-order').value = 'views';
             }
-            document.getElementById('status-filter').addEventListener('change', fetchListings);
-            document.getElementById('sort-order').addEventListener('change', fetchListings);
+            // Wire up filter/sort change listeners BEFORE first fetch so they're always active
+            document.getElementById('status-filter').addEventListener('change', applyFilters);
+            document.getElementById('sort-order').addEventListener('change', applyFilters);
+            // Fetch AFTER URL params have been applied to dropdowns
             fetchListings();
             await ownersReady;
             const editId = params.get('edit');
