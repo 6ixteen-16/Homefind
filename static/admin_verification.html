@@ -74,9 +74,9 @@
                     <label for="filter-status">Show:
                         <select id="filter-status">
                             <option value="all">All accounts</option>
-                            <option value="pending-account">⏳ Pending Account Verification</option>
-                            <option value="pending-docs">📄 Documents Pending Review</option>
-                            <option value="active">✅ Active Accounts</option>
+                            <option value="pending-account">Pending Account Verification</option>
+                            <option value="pending-docs">Documents Pending Review</option>
+                            <option value="active">Active Accounts</option>
                         </select>
                     </label>
                     <span id="filter-summary"></span>
@@ -103,7 +103,7 @@
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem;">
                 <h2 id="documents-title" style="margin: 0; font-size: 1.25rem;">Verification documents</h2>
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <button class="action-btn verify" id="modal-approve-all-btn" style="display: none;" type="button">✓ Approve All Documents</button>
+                    <button class="action-btn verify" id="modal-approve-all-btn" style="display: none;" type="button">Approve All Documents</button>
                     <button class="action-btn verify" id="modal-verify-account-btn" style="display: none;" type="button">Verify Account</button>
                     <button class="action-btn" type="button" onclick="closeDocuments()">Close</button>
                 </div>
@@ -263,11 +263,11 @@
                     const docName = document.document_type.replace(/_/g, ' ');
                     const isDocVerified = Boolean(document.verified_at);
                     const docBadge = isDocVerified
-                        ? '<span class="badge badge-verified">✅ Verified</span>'
-                        : '<span class="badge badge-pending">⏳ Pending review</span>';
+                        ? '<span class="badge badge-verified">Verified</span>'
+                        : '<span class="badge badge-pending">Pending review</span>';
 
                     const approveBtn = !isDocVerified
-                        ? `<button class="action-btn verify" data-action="verify-doc" data-user-id="${esc(userId)}" data-doc-id="${esc(document.document_id)}" title="Approve this document">✓ Approve</button>`
+                        ? `<button class="action-btn verify" data-action="verify-doc" data-user-id="${esc(userId)}" data-doc-id="${esc(document.document_id)}" title="Approve this document">Approve</button>`
                         : '';
 
                     return `
@@ -332,13 +332,13 @@
                 newTabLink.target = '_blank';
                 newTabLink.rel = 'noopener noreferrer';
                 newTabLink.className = 'action-btn';
-                newTabLink.textContent = 'Open in new tab ↗';
+                newTabLink.textContent = 'Open in new tab';
 
                 const downloadLink = document.createElement('a');
                 downloadLink.href = currentPreviewUrl;
                 downloadLink.download = (docName || 'document').replace(/\s+/g, '_') + (file.type === 'application/pdf' ? '.pdf' : '.png');
                 downloadLink.className = 'action-btn';
-                downloadLink.textContent = 'Download ↓';
+                downloadLink.textContent = 'Download';
 
                 linksDiv.appendChild(newTabLink);
                 linksDiv.appendChild(downloadLink);

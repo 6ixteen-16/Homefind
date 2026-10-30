@@ -84,8 +84,8 @@
 
             <!-- Pending review alert banner -->
             <div id="pending-banner">
-                <span>📋</span>
-                <span><strong id="pending-count">0</strong> listing(s) are awaiting your review. <a onclick="filterToDraft()">Show pending →</a></span>
+                
+                <span><strong id="pending-count">0</strong> listing(s) are awaiting your review. <a onclick="filterToDraft()">Show pending</a></span>
             </div>
 
             <div class="panel">
@@ -93,9 +93,9 @@
                     <label for="status-filter">Status
                         <select id="status-filter">
                             <option value="">All listings</option>
-                            <option value="Draft">⏳ Pending Review</option>
-                            <option value="Published">✅ Published</option>
-                            <option value="Archived">🗄 Archived</option>
+                            <option value="Draft">Pending Review</option>
+                            <option value="Published">Published</option>
+                            <option value="Archived">Archived</option>
                         </select>
                     </label>
                     <label for="sort-order">Sort
@@ -296,8 +296,8 @@
                 const isDraft = listing.property_status === 'Draft';
                 // Quick-action buttons for drafts; standard edit/delete for others
                 const reviewBtns = isDraft
-                    ? `<button class="action-btn publish" data-action="publish" data-id="${esc(listing.property_id)}" title="Publish this listing">✓ Publish</button>
-                       <button class="action-btn reject"  data-action="reject"  data-id="${esc(listing.property_id)}" title="Reject and archive">✗ Reject</button>`
+                    ? `<button class="action-btn publish" data-action="publish" data-id="${esc(listing.property_id)}" title="Publish this listing">Publish</button>
+                       <button class="action-btn reject"  data-action="reject"  data-id="${esc(listing.property_id)}" title="Reject and archive">Reject</button>`
                     : '';
                 return `
                     <tr>

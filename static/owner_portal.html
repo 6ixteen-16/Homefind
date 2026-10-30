@@ -179,7 +179,7 @@
             const allVerified = verifiedCount === data.documents.length && data.documents.length >= 4;
             vaultStatus.innerHTML = `
                 <div style="background: ${allVerified ? '#d1fae5' : '#fef3c7'}; padding: .75rem 1rem; border-radius: 8px; border: 1px solid ${allVerified ? '#a7f3d0' : '#fde68a'}; margin-bottom: 1rem;">
-                    <strong style="color: ${allVerified ? '#065f46' : '#92400e'};">${allVerified ? '✅ Documents Verified' : '⏳ Verification In Progress'}</strong>
+                    <strong style="color: ${allVerified ? '#065f46' : '#92400e'};">${allVerified ? 'Documents Verified' : 'Verification In Progress'}</strong>
                     <div style="font-size: .82rem; color: ${allVerified ? '#047857' : '#b45309'}; margin-top: .2rem;">
                         ${allVerified ? 'All your verification documents are approved.' : `${verifiedCount} of ${data.documents.length} documents verified by admin.`}
                     </div>
@@ -188,7 +188,7 @@
                     ${data.documents.map(d => `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: .4rem .6rem; background: #fff; border-radius: 6px; border: 1px solid #e8efeb;">
                             <span style="font-weight: 600; text-transform: capitalize;">${esc(d.document_type.replace(/_/g, ' '))}</span>
-                            <span class="${d.verified_at ? 'status status-confirmed' : 'status status-requested'}">${d.verified_at ? '✅ Verified' : '⏳ Under Review'}</span>
+                            <span class="${d.verified_at ? 'status status-confirmed' : 'status status-requested'}">${d.verified_at ? 'Verified' : 'Under Review'}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -212,9 +212,9 @@
             return 'lstatus lstatus-archived';
         }
         function lstatusLabel(s) {
-            if (s === 'Published') return '✅ Live';
-            if (s === 'Draft')     return '⏳ Awaiting review';
-            if (s === 'Archived')  return '🚫 Rejected';
+            if (s === 'Published') return 'Live';
+            if (s === 'Draft')     return 'Awaiting review';
+            if (s === 'Archived')  return 'Rejected';
             return s;
         }
         document.getElementById('properties').innerHTML = data.properties.length
