@@ -2,10 +2,11 @@
 """
 manage_backup.py
 ================
-Homefind AWS S3 Backup Management CLI
+Homefind Multi-Target Backup Management CLI (OneDrive & AWS S3)
 
 Commands:
   python manage_backup.py --status
+  python manage_backup.py --onedrive
   python manage_backup.py --init-backup
   python manage_backup.py --wipe-backup
   python manage_backup.py --restore-latest
@@ -18,6 +19,8 @@ import io
 import getpass
 import argparse
 import datetime
+import subprocess
+import shutil
 from typing import Optional
 
 # Ensure Homefind root is in sys.path
@@ -46,6 +49,11 @@ AWS_S3_PREFIX         = os.getenv("AWS_S3_PREFIX", "homefind/").strip()
 BACKUP_SUPERADMIN_SECRET_KEY = os.getenv("BACKUP_SUPERADMIN_SECRET_KEY", "").strip()
 
 CONFIRMATION_PHRASE = "I-UNDERSTAND-AND-CONFIRM-WIPE-BACKUP-DATABASE"
+
+
+def get_onedrive_dir() -> str:
+    base = os.environ.get("OneDrive") or os.path.join(os.path.expanduser("~"), "OneDrive")
+    return os.path.join(base, "Homefind_Backups")
 
 
 def get_primary_connection():
@@ -89,7 +97,7 @@ def format_size(num_bytes: int) -> str:
 
 def cmd_status():
     print("=" * 65)
-    print(" HOMEFIND DATABASE & AWS S3 BACKUP STATUS")
+    print(" HOMEFIND DATABASE & BACKUP STATUS (ONEDRIVE & AWS S3)")
     print("=" * 65)
 
     # 1. Primary MySQL Database
@@ -112,17 +120,34 @@ def cmd_status():
     else:
         print("  Status: [FAILED] Offline / Connection Failed")
 
-    # 2. AWS S3 Backup Storage
+    # 2. Microsoft OneDrive Local Backup Status
+    onedrive_dir = get_onedrive_dir()
+    print(f"\n[Microsoft OneDrive Backup] Target: {onedrive_dir}")
+    if os.path.exists(onedrive_dir):
+        files = [
+            os.path.join(onedrive_dir, f) for f in os.listdir(onedrive_dir)
+            if f.endswith(".sql")
+        ]
+        files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        print(f"  Status: [OK] Folder active ({len(files)} backup file(s) found)")
+        for f in files[:4]:
+            size_str = format_size(os.path.getsize(f))
+            dt = datetime.datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M:%S")
+            print(f"    - {os.path.basename(f)} ({size_str}) - {dt}")
+        if len(files) > 4:
+            print(f"    ... and {len(files) - 4} older backup(s)")
+    else:
+        print("  Status: [STANDBY] Folder not yet initialized (Run `python manage_backup.py --onedrive`)")
+
+    # 3. AWS S3 Backup Storage
     print(f"\n[AWS S3 Backup] Bucket: {AWS_S3_BUCKET or '(Not configured)'}")
     print(f"  Region: {AWS_S3_REGION} | Prefix: {AWS_S3_PREFIX}")
 
     s3 = get_s3_client()
     if not s3:
         print("  Status: [STANDBY] S3 credentials not fully configured in .env")
-        print("  Tip: Ensure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET are set.")
     else:
         try:
-            # Check bucket accessibility
             s3.head_bucket(Bucket=AWS_S3_BUCKET)
             print("  Status: [OK] S3 Bucket connected and accessible")
 
@@ -134,17 +159,12 @@ def cmd_status():
                 key=lambda x: x["LastModified"],
                 reverse=True
             )
-            print(f"\n  [Full Snapshots] Found {len(full_objs)} snapshot(s):")
-            if full_objs:
-                for obj in full_objs[:5]:
-                    key_name = obj["Key"].replace(full_prefix, "")
-                    size_str = format_size(obj["Size"])
-                    dt_str = obj["LastModified"].strftime("%Y-%m-%d %H:%M:%S UTC")
-                    print(f"    - {key_name} ({size_str}) - {dt_str}")
-                if len(full_objs) > 5:
-                    print(f"    ... and {len(full_objs) - 5} older snapshot(s)")
-            else:
-                print("    (No full snapshots yet. Run `python manage_backup.py --init-backup` to create one.)")
+            print(f"  [Full Snapshots] {len(full_objs)} snapshot(s) in S3")
+            for obj in full_objs[:3]:
+                key_name = obj["Key"].replace(full_prefix, "")
+                size_str = format_size(obj["Size"])
+                dt_str = obj["LastModified"].strftime("%Y-%m-%d %H:%M:%S UTC")
+                print(f"    - {key_name} ({size_str}) - {dt_str}")
 
             # Check incremental write logs
             inc_prefix = f"{AWS_S3_PREFIX}incremental/"
@@ -154,27 +174,81 @@ def cmd_status():
                 key=lambda x: x["LastModified"],
                 reverse=True
             )
-            print(f"\n  [Incremental Logs] Found {len(inc_objs)} log file(s):")
-            if inc_objs:
-                for obj in inc_objs[:5]:
-                    key_name = obj["Key"].replace(inc_prefix, "")
-                    size_str = format_size(obj["Size"])
-                    dt_str = obj["LastModified"].strftime("%Y-%m-%d %H:%M:%S UTC")
-                    print(f"    - {key_name} ({size_str}) - {dt_str}")
-            else:
-                print("    (No incremental logs recorded yet. Changes from running app will appear here.)")
+            print(f"  [Incremental Logs] {len(inc_objs)} log file(s) in S3")
+            for obj in inc_objs[:3]:
+                key_name = obj["Key"].replace(inc_prefix, "")
+                size_str = format_size(obj["Size"])
+                dt_str = obj["LastModified"].strftime("%Y-%m-%d %H:%M:%S UTC")
+                print(f"    - {key_name} ({size_str}) - {dt_str}")
 
         except Exception as e:
             print(f"  Status: [FAILED] S3 query error: {e}")
 
-    # 3. Super Admin Key Configuration Status
+    # 4. Super Admin Key Configuration Status
     print("\n[Security Gate]")
     if BACKUP_SUPERADMIN_SECRET_KEY:
-        print("  Super Admin Passkey: [CONFIGURED] Protected wipe is enabled.")
+        print("  Super Admin Passkey: [CONFIGURED] Protected wipe is active.")
     else:
         print("  Super Admin Passkey: [NOT SET] Set BACKUP_SUPERADMIN_SECRET_KEY in .env to protect wipe operations.")
 
     print("\n" + "=" * 65)
+
+
+def cmd_backup_onedrive():
+    print("=" * 65)
+    print(" BACKUP MYSQL DATABASE TO MICROSOFT ONEDRIVE")
+    print("=" * 65)
+
+    onedrive_dir = get_onedrive_dir()
+    os.makedirs(onedrive_dir, exist_ok=True)
+
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_file = os.path.join(onedrive_dir, f"homefinder_db_{timestamp}.sql")
+    latest_file = os.path.join(onedrive_dir, "homefinder_db_latest.sql")
+
+    # Locate mysqldump executable
+    mysqldump_candidates = [
+        r"C:\Program Files\MySQL\MySQL Server 26.7\bin\mysqldump.exe",
+        r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
+        shutil.which("mysqldump")
+    ]
+    mysqldump_bin = next((p for p in mysqldump_candidates if p and os.path.exists(p)), None)
+
+    if not mysqldump_bin:
+        print("[ERROR] mysqldump executable could not be located.")
+        sys.exit(1)
+
+    print(f"Target Destination: {backup_file}")
+    print("Executing mysqldump...")
+
+    cmd = [
+        mysqldump_bin,
+        f"--host={DB_HOST}",
+        f"--port={DB_PORT}",
+        f"--user={DB_USER}",
+        f"--password={DB_PASS}",
+        "--skip-masking-policies",
+        "--no-tablespaces",
+        "--set-gtid-purged=OFF",
+        "--single-transaction",
+        DB_NAME,
+        f"--result-file={backup_file}"
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[ERROR] mysqldump failed (code {result.returncode}):\n{result.stderr}")
+        sys.exit(1)
+
+    # Keep a copy as latest.sql
+    shutil.copyfile(backup_file, latest_file)
+    file_size = format_size(os.path.getsize(backup_file))
+
+    print(f"\n[SUCCESS] MySQL database successfully exported to OneDrive!")
+    print(f"  Backup File: {backup_file}")
+    print(f"  File Size:   {file_size}")
+    print(f"  OneDrive Sync: Windows OneDrive automatically mirrors this file to Microsoft Cloud.")
+    print("=" * 65)
 
 
 def cmd_init_backup():
@@ -192,17 +266,16 @@ def cmd_init_backup():
         print("[ERROR] Cannot connect to local database.")
         sys.exit(1)
 
-    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
     s3_key = f"{AWS_S3_PREFIX}full/{timestamp}.sql.gz"
 
     print(f"\nExporting database `{DB_NAME}` from {DB_HOST}:{DB_PORT}...")
     dump_buffer = io.BytesIO()
 
     with gzip.GzipFile(fileobj=dump_buffer, mode="wb") as gz:
-        # Header
         header = (
             f"-- Homefind Database Snapshot\n"
-            f"-- Generated: {datetime.datetime.utcnow().isoformat()} UTC\n"
+            f"-- Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()} UTC\n"
             f"-- Database: `{DB_NAME}`\n\n"
             f"SET FOREIGN_KEY_CHECKS = 0;\n"
             f"SET NAMES utf8mb4;\n\n"
@@ -215,7 +288,6 @@ def cmd_init_backup():
             tables = [list(r.values())[0] for r in cur.fetchall()]
 
             for table in tables:
-                # Structure
                 cur.execute(f"SHOW CREATE TABLE `{table}`")
                 create_sql = cur.fetchone()["Create Table"]
                 table_hdr = (
@@ -225,7 +297,6 @@ def cmd_init_backup():
                 )
                 gz.write(table_hdr.encode("utf-8"))
 
-                # Data
                 cur.execute(f"SELECT * FROM `{table}`")
                 rows = cur.fetchall()
                 if rows:
@@ -286,12 +357,9 @@ def cmd_init_backup():
 
 def cmd_wipe_backup():
     print("\n" + "!" * 70)
-    print(" [CRITICAL WARNING] PERMANENT DELETION OF S3 BACKUP REPOSITORY")
+    print(" [CRITICAL WARNING] PERMANENT DELETION OF BACKUP REPOSITORY")
     print("!" * 70)
-    print(f" Target Bucket: {AWS_S3_BUCKET}")
-    print(f" Target Prefix: {AWS_S3_PREFIX}")
-    print("\n This operation will permanently delete ALL snapshots and write logs")
-    print(f" stored under '{AWS_S3_PREFIX}' in your S3 bucket.")
+    print(" This operation will permanently delete backups (OneDrive and/or AWS S3).")
     print(" This action cannot be undone.")
     print("!" * 70 + "\n")
 
@@ -317,30 +385,41 @@ def cmd_wipe_backup():
         print("Action aborted. The backup repository was NOT touched.")
         sys.exit(1)
 
-    s3 = get_s3_client()
-    if not s3:
-        print("[ERROR] Could not connect to AWS S3.")
-        sys.exit(1)
+    print("\nChoose what to wipe:")
+    print("  1. OneDrive backups only")
+    print("  2. AWS S3 backups only")
+    print("  3. Both OneDrive and AWS S3 backups")
+    choice = input("Enter choice (1/2/3): ").strip()
 
-    print(f"\nScanning objects under 's3://{AWS_S3_BUCKET}/{AWS_S3_PREFIX}'...")
-    paginator = s3.get_paginator("list_objects_v2")
-    objects_to_delete = []
+    # Wipe OneDrive
+    if choice in ("1", "3"):
+        onedrive_dir = get_onedrive_dir()
+        if os.path.exists(onedrive_dir):
+            count = 0
+            for f in os.listdir(onedrive_dir):
+                if f.endswith(".sql"):
+                    os.remove(os.path.join(onedrive_dir, f))
+                    count += 1
+            print(f"[SUCCESS] Wiped {count} backup file(s) from OneDrive ({onedrive_dir}).")
 
-    for page in paginator.paginate(Bucket=AWS_S3_BUCKET, Prefix=AWS_S3_PREFIX):
-        for item in page.get("Contents", []):
-            objects_to_delete.append({"Key": item["Key"]})
+    # Wipe S3
+    if choice in ("2", "3"):
+        s3 = get_s3_client()
+        if s3:
+            print(f"\nScanning objects under 's3://{AWS_S3_BUCKET}/{AWS_S3_PREFIX}'...")
+            paginator = s3.get_paginator("list_objects_v2")
+            objects_to_delete = []
+            for page in paginator.paginate(Bucket=AWS_S3_BUCKET, Prefix=AWS_S3_PREFIX):
+                for item in page.get("Contents", []):
+                    objects_to_delete.append({"Key": item["Key"]})
 
-    if not objects_to_delete:
-        print("[NOTICE] No backup objects found under that prefix. Nothing to delete.")
-        return
-
-    print(f"Found {len(objects_to_delete)} object(s). Deleting...")
-    # Delete in batches of up to 1000 (S3 limit)
-    for i in range(0, len(objects_to_delete), 1000):
-        batch = objects_to_delete[i:i + 1000]
-        s3.delete_objects(Bucket=AWS_S3_BUCKET, Delete={"Objects": batch})
-
-    print(f"[SUCCESS] Permanently wiped {len(objects_to_delete)} backup file(s) from S3.")
+            if objects_to_delete:
+                for i in range(0, len(objects_to_delete), 1000):
+                    batch = objects_to_delete[i:i + 1000]
+                    s3.delete_objects(Bucket=AWS_S3_BUCKET, Delete={"Objects": batch})
+                print(f"[SUCCESS] Wiped {len(objects_to_delete)} backup file(s) from AWS S3.")
+            else:
+                print("[NOTICE] No S3 backup objects found under that prefix.")
 
 
 def cmd_restore_latest():
@@ -394,10 +473,11 @@ def cmd_restore_latest():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Homefind AWS S3 Backup Manager")
-    parser.add_argument("--status", action="store_true", help="Check primary database and AWS S3 backup status")
+    parser = argparse.ArgumentParser(description="Homefind Backup Manager (OneDrive & AWS S3)")
+    parser.add_argument("--status", action="store_true", help="Check primary database, OneDrive, and AWS S3 backup status")
+    parser.add_argument("--onedrive", action="store_true", help="Dump local MySQL database directly to Microsoft OneDrive")
     parser.add_argument("--init-backup", action="store_true", help="Create a full snapshot and upload to S3")
-    parser.add_argument("--wipe-backup", action="store_true", help="Wipe backup repository on S3 (requires Super Admin passkey)")
+    parser.add_argument("--wipe-backup", action="store_true", help="Wipe backup repository (requires Super Admin passkey)")
     parser.add_argument("--restore-latest", action="store_true", help="Restore local database from the latest S3 snapshot")
 
     if len(sys.argv) == 1:
@@ -408,6 +488,8 @@ def main():
 
     if args.status:
         cmd_status()
+    elif args.onedrive:
+        cmd_backup_onedrive()
     elif args.init_backup:
         cmd_init_backup()
     elif args.wipe_backup:
