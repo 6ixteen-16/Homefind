@@ -251,7 +251,7 @@
                     </div>
                     <div class="value" id="val-total-views">0</div>
                     <div class="label">Total Views</div>
-                    <div class="sub">across all listings</div>
+                    <div class="sub" id="sub-total-views">across all listings</div>
                     <div class="card-action">View listing view counts →</div>
                 </a>
 
@@ -342,16 +342,17 @@
                     'Authorization': 'Bearer ' + token
                 }
             })
-                .then(res => {
+                                .then(res => {
                     if (res.status === 401 || res.status === 403) {
                         localStorage.removeItem('auth_token');
                         window.location.href = 'login.html';
+                        return Promise.reject('redirect');
                     }
                     return res.json();
                 })
                 .then(result => {
                     if (result.status !== 'success') {
-                        alert('Error loading dashboard: ' + result.message);
+                        alert('Error loading dashboard: ' + apiErr(result));
                         window.location.href = 'login.html';
                         return;
                     }
@@ -366,6 +367,7 @@
                     document.getElementById('sub-new-inquiries').innerText = `${d.total_inquiries} total`;
 
                     document.getElementById('val-total-views').innerText = d.total_views.toLocaleString();
+                    document.getElementById('sub-total-views').innerText = `across ${d.total_listings} listing${d.total_listings !== 1 ? 's' : ''}`;
 
                     document.getElementById('val-active-listings').innerText = d.active_listings.toLocaleString();
                     document.getElementById('sub-active-listings').innerText = `of ${d.total_listings} total`;

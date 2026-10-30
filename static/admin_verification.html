@@ -12,26 +12,41 @@
         .sidebar a { display: block; padding: 0.75rem 1rem; color: var(--text-color); text-decoration: none; border-radius: 8px; margin-bottom: 0.5rem; font-weight: 500; }
         .sidebar a:hover, .sidebar a.active { background: #f3f4f6; color: var(--primary-color); }
         .panel { background: var(--white); border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; }
-        .header-section { margin-bottom: 2rem; }
+        .header-section { margin-bottom: 1.5rem; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 1rem; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: middle; }
         th { background: #f9fafb; color: var(--text-muted); font-size: 0.85rem; }
         td { font-size: 0.9rem; }
         .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.4rem; }
-        .action-btn { padding: 0.4rem 0.65rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }
-        .action-btn.primary { color: white; background: #d97706; border-color: #d97706; }
-        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; background: #f3f4f6; font-size: 0.75rem; }
+        .action-btn { padding: 0.4rem 0.7rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; font-size: 0.82rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; color: inherit; }
+        .action-btn:hover { background: #f9fafb; }
+        .action-btn.verify { color: white; background: #107754; border-color: #107754; }
+        .action-btn.verify:hover { background: #0c5c40; border-color: #0c5c40; }
+        .action-btn.unverify { color: #92400e; background: #fef3c7; border-color: #fde68a; }
+        .action-btn.unverify:hover { background: #fde68a; }
+        .action-btn.delete { color: #dc2626; border-color: #fca5a5; }
+        .action-btn.delete:hover { color: #dc2626; background: #fee2e2; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 600; border: 1px solid transparent; }
+        .badge-role { background: #e0e7ff; color: #3730a3; }
+        .badge-verified { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+        .badge-pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+        .table-filters { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid #e5e7eb; background: #fafafa; }
+        .table-filters label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+        .table-filters select { padding: 0.4rem 0.65rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; font-size: 0.85rem; }
+        #filter-summary { margin-left: auto; font-size: 0.85rem; color: var(--text-muted); }
+
         .modal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(0,0,0,0.5); z-index: 50; }
-        .modal { width: min(760px, 100%); max-height: 90vh; overflow-y: auto; padding: 1.5rem; border-radius: 12px; background: white; }
+        .modal { width: min(800px, 100%); max-height: 90vh; overflow-y: auto; padding: 1.5rem; border-radius: 12px; background: white; }
         .document-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; }
+        .document-actions { display: flex; align-items: center; gap: 0.4rem; }
         #document-preview { margin-top: 1rem; }
-        #document-preview img, #document-preview iframe { width: 100%; height: 65vh; object-fit: contain; border: 0; }
         @media (max-width: 760px) {
             .admin-layout { display: block; }
             .sidebar { width: auto; }
             .main-content { padding: 1rem; }
             .panel { overflow-x: auto; }
-            table { min-width: 800px; }
+            table { min-width: 750px; }
         }
     </style>
 </head>
@@ -52,33 +67,48 @@
         <main class="main-content">
             <header class="header-section">
                 <h1 style="font-weight: 300; font-size: 2.2rem; margin-bottom: 0.5rem;">Owners &amp; Verification</h1>
-                <p style="color: var(--text-muted);">Review Owner and Agent accounts, inspect submitted documents, and verify identities.</p>
+                <p style="color: var(--text-muted);">Verify newly registered Owner/Agent accounts so they can sign in, and review submitted verification documents.</p>
             </header>
             <div class="panel">
+                <div class="table-filters">
+                    <label for="filter-status">Show:
+                        <select id="filter-status">
+                            <option value="all">All accounts</option>
+                            <option value="pending-account">Pending Account Verification</option>
+                            <option value="pending-docs">Documents Pending Review</option>
+                            <option value="active">Active Accounts</option>
+                        </select>
+                    </label>
+                    <span id="filter-summary"></span>
+                </div>
                 <table id="verifications-table">
                     <thead>
                         <tr>
                             <th>Name / Role</th>
                             <th>Email</th>
-                            <th>Account</th>
-                            <th>Identity</th>
-                            <th>Documents</th>
+                            <th>Account Access</th>
+                            <th>Verification Documents</th>
                             <th style="text-align: right;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody><tr><td colspan="6" style="text-align: center;">Loading accounts...</td></tr></tbody>
+                    <tbody><tr><td colspan="5" style="text-align: center;">Loading accounts...</td></tr></tbody>
                 </table>
             </div>
         </main>
     </div>
 
+    <!-- Documents Modal -->
     <div class="modal-overlay" id="documents-modal" role="dialog" aria-modal="true" aria-labelledby="documents-title">
         <section class="modal">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-                <h2 id="documents-title">Verification documents</h2>
-                <button class="action-btn" type="button" onclick="closeDocuments()">Close</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem;">
+                <h2 id="documents-title" style="margin: 0; font-size: 1.25rem;">Verification documents</h2>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="action-btn verify" id="modal-approve-all-btn" style="display: none;" type="button">Approve All Documents</button>
+                    <button class="action-btn verify" id="modal-verify-account-btn" style="display: none;" type="button">Verify Account</button>
+                    <button class="action-btn" type="button" onclick="closeDocuments()">Close</button>
+                </div>
             </div>
-            <div id="documents-list"></div>
+            <div id="documents-list" style="margin-top: 1rem;"></div>
             <div id="document-preview"></div>
         </section>
     </div>
@@ -89,6 +119,9 @@
         if (!token) window.location.href = 'login.html';
         const apiHeaders = { Authorization: 'Bearer ' + token };
         let currentPreviewUrl = null;
+        let allUsers = [];
+        let activeUserId = null;
+        let activeUserRole = null;
 
         async function apiRequest(url, options = {}) {
             const response = await fetch(url, { ...options, headers: { ...apiHeaders, ...(options.headers || {}) } });
@@ -104,65 +137,159 @@
             return result;
         }
 
+        function renderUsers(users) {
+            const tbody = document.querySelector('#verifications-table tbody');
+            document.getElementById('filter-summary').textContent = `${users.length} ${users.length === 1 ? 'account' : 'accounts'}`;
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching accounts found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = users.map(user => {
+                const isVerified = Boolean(user.is_active);
+                const statusBadge = isVerified
+                    ? '<span class="badge badge-verified">Active</span>'
+                    : '<span class="badge badge-pending">Pending Verification</span>';
+
+                let documentSummary = '<span style="color: var(--text-muted);">None submitted</span>';
+                const hasPendingDocs = user.document_count > 0 && user.verified_count < user.document_count;
+                if (user.document_count > 0) {
+                    if (user.verified_count === user.document_count) {
+                        documentSummary = `<span class="badge badge-verified">All ${user.document_count} verified</span>`;
+                    } else {
+                        documentSummary = `<span class="badge badge-pending">${user.document_count - user.verified_count} of ${user.document_count} pending review</span>`;
+                    }
+                }
+
+                const actions = [];
+                if (user.document_count > 0) {
+                    actions.push(`<button class="action-btn" data-action="documents" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}" data-verified="${isVerified ? '1' : '0'}">View documents</button>`);
+                    if (hasPendingDocs) {
+                        actions.push(`<button class="action-btn verify" data-action="approve-docs" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}" title="Approve all submitted documents">Approve Docs</button>`);
+                    }
+                }
+
+                if (!isVerified) {
+                    actions.push(`<button class="action-btn verify" data-action="verify" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}">Verify ${esc(user.role)}</button>`);
+                    actions.push(`<button class="action-btn delete" data-action="reject" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}">Reject</button>`);
+                } else {
+                    actions.push(`<button class="action-btn unverify" data-action="unverify" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}">Unverify</button>`);
+                    actions.push(`<button class="action-btn delete" data-action="reject" data-id="${esc(user.user_id)}" data-role="${esc(user.role)}">Reject</button>`);
+                }
+
+                return `<tr>
+                    <td><strong>${esc(user.name || 'Profile name missing')}</strong><br><span class="badge badge-role">${esc(user.role)}</span></td>
+                    <td>${esc(user.email)}</td>
+                    <td>${statusBadge}</td>
+                    <td>${documentSummary}</td>
+                    <td><div class="actions">${actions.join('')}</div></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function applyFilter() {
+            const filter = document.getElementById('filter-status').value;
+            let filtered = allUsers;
+            if (filter === 'pending-account') {
+                filtered = allUsers.filter(u => !u.is_active);
+            } else if (filter === 'pending-docs') {
+                filtered = allUsers.filter(u => u.document_count > 0 && u.verified_count < u.document_count);
+            } else if (filter === 'active') {
+                filtered = allUsers.filter(u => Boolean(u.is_active));
+            }
+            renderUsers(filtered);
+        }
+
         async function loadVerifications() {
             const tbody = document.querySelector('#verifications-table tbody');
             try {
                 const result = await apiRequest('/api/admin/verifications');
-                if (!result.data.length) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No Owner or Agent accounts found.</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = result.data.map(user => {
-                    const accountStatus = user.is_active ? 'Active' : 'Awaiting activation';
-                    const documentSummary = user.document_count
-                        ? `${user.verified_count} of ${user.document_count} verified`
-                        : 'None submitted';
-                    return `<tr>
-                        <td><strong>${esc(user.name || 'Profile name missing')}</strong><br><span class="badge">${esc(user.role)}</span></td>
-                        <td>${esc(user.email)}</td>
-                        <td>${esc(accountStatus)}</td>
-                        <td>${esc(user.verification_status)}</td>
-                        <td>${esc(documentSummary)}</td>
-                        <td><div class="actions">
-                            ${user.document_count ? `<button class="action-btn" data-action="documents" data-id="${esc(user.user_id)}">View documents</button>` : ''}
-                            ${user.document_count && user.verification_status !== 'Verified' ? `<button class="action-btn primary" data-action="verify" data-id="${esc(user.user_id)}">Verify identity</button>` : ''}
-                            ${!user.is_active ? `<button class="action-btn primary" data-action="activate" data-id="${esc(user.user_id)}">Activate account</button>` : ''}
-                        </div></td>
-                    </tr>`;
-                }).join('');
+                allUsers = result.data;
+                applyFilter();
             } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #b91c1c;">${esc(error.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #b91c1c;">${esc(error.message)}</td></tr>`;
             }
         }
 
-        async function showDocuments(userId) {
+        async function showDocuments(userId, role, isVerified) {
+            activeUserId = userId;
+            activeUserRole = role;
             const modal = document.getElementById('documents-modal');
             const list = document.getElementById('documents-list');
-            document.getElementById('documents-title').textContent = 'Verification documents';
+            const verifyAccountBtn = document.getElementById('modal-verify-account-btn');
+            const approveAllBtn = document.getElementById('modal-approve-all-btn');
+
+            document.getElementById('documents-title').textContent = `${role || 'User'} verification documents`;
             document.getElementById('document-preview').replaceChildren();
             list.textContent = 'Loading documents...';
             modal.style.display = 'flex';
+
+            if (verifyAccountBtn) {
+                if (isVerified !== '1') {
+                    verifyAccountBtn.style.display = 'inline-block';
+                    verifyAccountBtn.textContent = `Verify ${role || 'Account'}`;
+                    verifyAccountBtn.onclick = async () => {
+                        await updateAccount(userId, 'verify', role);
+                        closeDocuments();
+                    };
+                } else {
+                    verifyAccountBtn.style.display = 'none';
+                }
+            }
+
             try {
                 const result = await apiRequest(`/api/admin/verification/${encodeURIComponent(userId)}`);
                 if (!result.data.length) {
                     list.textContent = 'No documents have been submitted.';
+                    if (approveAllBtn) approveAllBtn.style.display = 'none';
                     return;
                 }
-                list.innerHTML = result.data.map(document => `
+
+                const hasUnverified = result.data.some(d => !d.verified_at);
+                if (approveAllBtn) {
+                    approveAllBtn.style.display = hasUnverified ? 'inline-block' : 'none';
+                    approveAllBtn.onclick = async () => {
+                        if (!confirm('Approve all submitted documents for this user?')) return;
+                        try {
+                            const res = await apiRequest(`/api/admin/verification/${encodeURIComponent(userId)}/approve_docs`, { method: 'PUT' });
+                            alert(res.message || 'Documents approved.');
+                            showDocuments(userId, role, isVerified);
+                            loadVerifications();
+                        } catch (e) { alert(e.message); }
+                    };
+                }
+
+                list.innerHTML = result.data.map(document => {
+                    const docName = document.document_type.replace(/_/g, ' ');
+                    const isDocVerified = Boolean(document.verified_at);
+                    const docBadge = isDocVerified
+                        ? '<span class="badge badge-verified">Verified</span>'
+                        : '<span class="badge badge-pending">Pending review</span>';
+
+                    const approveBtn = !isDocVerified
+                        ? `<button class="action-btn verify" data-action="verify-doc" data-user-id="${esc(userId)}" data-doc-id="${esc(document.document_id)}" title="Approve this document">Approve</button>`
+                        : '';
+
+                    return `
                     <div class="document-row">
-                        <span><strong>${esc(document.document_type.replace(/_/g, ' '))}</strong><br>
-                            <small>${esc(document.verified_at ? 'Verified' : 'Pending review')} · ${esc(document.uploaded_at || '')}</small>
-                        </span>
-                        <button class="action-btn" data-action="preview" data-user-id="${esc(userId)}" data-document-id="${esc(document.document_id)}">Preview</button>
-                    </div>`).join('');
+                        <div>
+                            <strong style="text-transform: capitalize;">${esc(docName)}</strong>
+                            <div style="margin-top: 0.25rem;">${docBadge} <small style="color: var(--text-muted); margin-left: 0.5rem;">${esc(document.uploaded_at || '')}</small></div>
+                        </div>
+                        <div class="document-actions">
+                            <button class="action-btn" data-action="preview" data-user-id="${esc(userId)}" data-document-id="${esc(document.document_id)}" data-doc-name="${esc(docName)}">Preview</button>
+                            ${approveBtn}
+                        </div>
+                    </div>`;
+                }).join('');
             } catch (error) {
                 list.textContent = error.message;
             }
         }
 
-        async function previewDocument(userId, documentId) {
+        async function previewDocument(userId, documentId, docName) {
             const preview = document.getElementById('document-preview');
-            preview.textContent = 'Loading preview...';
+            preview.innerHTML = '<p style="color: var(--text-muted); padding: 1rem 0;">Loading document...</p>';
             if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
             currentPreviewUrl = null;
             try {
@@ -179,59 +306,166 @@
                 const file = await response.blob();
                 currentPreviewUrl = URL.createObjectURL(file);
                 preview.replaceChildren();
+
+                const toolbar = document.createElement('div');
+                toolbar.style.display = 'flex';
+                toolbar.style.justifyContent = 'space-between';
+                toolbar.style.alignItems = 'center';
+                toolbar.style.marginBottom = '0.75rem';
+                toolbar.style.padding = '0.5rem 0.75rem';
+                toolbar.style.background = '#f9fafb';
+                toolbar.style.borderRadius = '6px';
+                toolbar.style.border = '1px solid #e5e7eb';
+
+                const titleSpan = document.createElement('span');
+                titleSpan.style.fontWeight = '600';
+                titleSpan.style.fontSize = '0.85rem';
+                titleSpan.style.textTransform = 'capitalize';
+                titleSpan.textContent = docName || 'Document Preview';
+
+                const linksDiv = document.createElement('div');
+                linksDiv.style.display = 'flex';
+                linksDiv.style.gap = '0.5rem';
+
+                const newTabLink = document.createElement('a');
+                newTabLink.href = currentPreviewUrl;
+                newTabLink.target = '_blank';
+                newTabLink.rel = 'noopener noreferrer';
+                newTabLink.className = 'action-btn';
+                newTabLink.textContent = 'Open in new tab';
+
+                const downloadLink = document.createElement('a');
+                downloadLink.href = currentPreviewUrl;
+                downloadLink.download = (docName || 'document').replace(/\s+/g, '_') + (file.type === 'application/pdf' ? '.pdf' : '.png');
+                downloadLink.className = 'action-btn';
+                downloadLink.textContent = 'Download';
+
+                linksDiv.appendChild(newTabLink);
+                linksDiv.appendChild(downloadLink);
+                toolbar.appendChild(titleSpan);
+                toolbar.appendChild(linksDiv);
+                preview.appendChild(toolbar);
+
                 if (file.type.startsWith('image/')) {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.style.textAlign = 'center';
+                    imgContainer.style.maxHeight = '65vh';
+                    imgContainer.style.overflow = 'auto';
+                    imgContainer.style.border = '1px solid #e5e7eb';
+                    imgContainer.style.borderRadius = '8px';
+                    imgContainer.style.padding = '0.75rem';
+                    imgContainer.style.background = '#fafafa';
+
                     const image = document.createElement('img');
-                    image.alt = 'Submitted verification document';
+                    image.alt = docName || 'Submitted verification document';
                     image.src = currentPreviewUrl;
-                    preview.appendChild(image);
+                    image.style.maxWidth = '100%';
+                    image.style.maxHeight = '55vh';
+                    image.style.objectFit = 'contain';
+                    image.style.borderRadius = '4px';
+                    imgContainer.appendChild(image);
+                    preview.appendChild(imgContainer);
                 } else if (file.type === 'application/pdf') {
                     const frame = document.createElement('iframe');
-                    frame.title = 'Submitted verification PDF';
+                    frame.title = docName || 'Submitted verification PDF';
                     frame.src = currentPreviewUrl;
+                    frame.style.width = '100%';
+                    frame.style.height = '65vh';
+                    frame.style.border = '1px solid #e5e7eb';
+                    frame.style.borderRadius = '8px';
                     preview.appendChild(frame);
                 } else {
-                    preview.textContent = 'This document type cannot be previewed in the browser.';
+                    const fallback = document.createElement('div');
+                    fallback.style.padding = '2rem';
+                    fallback.style.textAlign = 'center';
+                    fallback.innerHTML = `
+                        <p style="margin-bottom: 1rem;">Preview not directly supported in this browser for this file type (${esc(file.type)}).</p>
+                        <a href="${currentPreviewUrl}" target="_blank" class="action-btn">Open file</a>
+                    `;
+                    preview.appendChild(fallback);
                 }
             } catch (error) {
-                preview.textContent = error.message;
+                preview.innerHTML = `<p style="color: #dc2626; padding: 1rem;">${esc(error.message)}</p>`;
             }
         }
 
-        async function updateAccount(userId, action) {
+        async function approveSingleDoc(userId, documentId) {
             try {
-                if (action === 'verify' && !confirm('Verify all submitted identity documents for this account?')) return;
-                if (action === 'activate' && !confirm('Activate this account so its owner or agent can sign in?')) return;
-                const url = action === 'verify'
-                    ? `/api/admin/verification/${encodeURIComponent(userId)}`
-                    : `/api/admin/users/${encodeURIComponent(userId)}/activate`;
-                const options = action === 'verify'
-                    ? { method: 'PUT' }
-                    : { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activate: true }) };
+                const res = await apiRequest(`/api/admin/verification/${encodeURIComponent(userId)}/documents/${encodeURIComponent(documentId)}/verify`, { method: 'PUT' });
+                alert(res.message || 'Document approved.');
+                showDocuments(userId, activeUserRole);
+                loadVerifications();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function updateAccount(userId, action, role) {
+            try {
+                const roleLabel = role || 'account';
+                let bodyPayload = {};
+                if (action === 'verify') {
+                    if (!confirm(`Verify this ${roleLabel} account so they can sign in?`)) return;
+                    bodyPayload = { activate: true };
+                } else if (action === 'unverify') {
+                    if (!confirm(`Unverify this ${roleLabel}? They will not be able to sign in until verified again.`)) return;
+                    bodyPayload = { activate: false, unverify: true };
+                } else if (action === 'reject') {
+                    if (!confirm(`Are you sure you want to reject this ${roleLabel}? This action will permanently remove the account.`)) return;
+                    bodyPayload = { activate: false };
+                }
+
+                const url = `/api/admin/users/${encodeURIComponent(userId)}/activate`;
+                const options = {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyPayload)
+                };
+
                 const result = await apiRequest(url, options);
                 await loadVerifications();
-                if (action === 'verify') await showDocuments(userId);
-                else alert(result.message || 'Account activated.');
+                alert(result.message || `${roleLabel} updated successfully.`);
             } catch (error) {
                 alert(error.message);
             }
         }
 
-        document.querySelector('#verifications-table tbody').addEventListener('click', event => {
+        document.querySelector('#verifications-table tbody').addEventListener('click', async event => {
             const button = event.target.closest('button[data-action]');
             if (!button) return;
-            if (button.dataset.action === 'documents') showDocuments(button.dataset.id);
-            else updateAccount(button.dataset.id, button.dataset.action);
+            const action = button.dataset.action;
+            const userId = button.dataset.id;
+            const role = button.dataset.role;
+
+            if (action === 'documents') {
+                showDocuments(userId, role, button.dataset.verified);
+            } else if (action === 'approve-docs') {
+                if (!confirm(`Approve all submitted verification documents for this ${role}?`)) return;
+                try {
+                    const res = await apiRequest(`/api/admin/verification/${encodeURIComponent(userId)}/approve_docs`, { method: 'PUT' });
+                    alert(res.message || 'Documents approved.');
+                    loadVerifications();
+                } catch (e) { alert(e.message); }
+            } else {
+                updateAccount(userId, action, role);
+            }
         });
 
         document.getElementById('documents-list').addEventListener('click', event => {
-            const button = event.target.closest('button[data-action="preview"]');
-            if (button) previewDocument(button.dataset.userId, button.dataset.documentId);
+            const btn = event.target.closest('button[data-action]');
+            if (!btn) return;
+            if (btn.dataset.action === 'preview') {
+                previewDocument(btn.dataset.userId, btn.dataset.documentId, btn.dataset.docName);
+            } else if (btn.dataset.action === 'verify-doc') {
+                approveSingleDoc(btn.dataset.userId, btn.dataset.docId);
+            }
         });
 
         function closeDocuments() {
             document.getElementById('documents-modal').style.display = 'none';
             if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
             currentPreviewUrl = null;
+            activeUserId = null;
         }
 
         function logout() {
@@ -240,6 +474,7 @@
                 .finally(() => { window.location.href = 'login.html'; });
         }
 
+        document.getElementById('filter-status').addEventListener('change', applyFilter);
         document.addEventListener('DOMContentLoaded', loadVerifications);
     </script>
 </body>

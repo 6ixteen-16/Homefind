@@ -55,6 +55,13 @@
                 .finally(() => { window.location.href = 'login.html'; });
         }
 
+        function formatDate(str) {
+            if (!str) return '—';
+            const d = new Date(str.replace(' ', 'T'));
+            if (isNaN(d)) return str;
+            return d.toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             const rows = document.getElementById('audit-rows');
             try {
@@ -68,7 +75,7 @@
                 if (!response.ok || result.status !== 'success') throw new Error(result.detail || result.message || 'Could not load activity.');
                 rows.innerHTML = result.data.length ? result.data.map(log => `
                     <tr>
-                        <td>${esc(log.created_at || '')}</td>
+                        <td>${esc(formatDate(log.created_at))}</td>
                         <td>${esc(log.user_email || 'System')}</td>
                         <td>${esc(String(log.action || '').replace(/_/g, ' ').toLowerCase())}</td>
                         <td>${esc(log.table_name || '')}</td>

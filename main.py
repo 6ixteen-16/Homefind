@@ -75,6 +75,8 @@ import time
 _rate_limits = defaultdict(deque)
 
 def rate_limit(key: str, limit: int, window_seconds: int) -> None:
+    if APP_ENV != "production":
+        limit = max(limit, 500)
     now = time.monotonic()
     q = _rate_limits[key]
     while q and now - q[0] > window_seconds:
@@ -195,8 +197,9 @@ if CORS_ORIGINS:
 # external scripts, plugins, framing and cross-site fetch/XHR as defence in depth.
 CSP = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; "
-    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    "img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob:; "
+    "object-src 'self' blob:; frame-src 'self' blob:; "
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 )
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 
@@ -204,7 +207,7 @@ DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     if request.url.path not in DOC_PATHS:
         response.headers.setdefault("Content-Security-Policy", CSP)
@@ -560,7 +563,7 @@ def authenticate(conn, cursor, email, password, ip):
 
     if not verify_password(password, user['password_hash']):
         attempts = attempts_before + 1
-        new_lock = (now + datetime.timedelta(minutes=15)) if attempts >= 5 else None
+        new_lock = (now + datetime.timedelta(minutes=5)) if attempts >= 5 else None
         cursor.execute("UPDATE users SET failed_login_attempts = %s, locked_until = %s WHERE user_id = %s",
                        (attempts, new_lock, user['user_id']))
         conn.commit()
@@ -800,8 +803,8 @@ async def register(request: Request):
         # All self-registered accounts start inactive:
         # Tenants activate via email verification link; other roles need admin approval.
         cursor.execute("""
-            INSERT INTO users (user_id, email, password_hash, role, is_active)
-            VALUES (%s, %s, %s, %s, 0)
+            INSERT INTO users (user_id, email, password_hash, role, is_active, password_last_changed)
+            VALUES (%s, %s, %s, %s, 0, NOW())
         """, (user_id, email, hashed, role))
 
         if role == 'Tenant':
@@ -877,8 +880,9 @@ def get_pending_users(admin: dict = Depends(get_admin_user)):
 @app.put("/api/admin/users/{user_id}/activate")
 async def activate_user(user_id: str, request: Request,
                         admin: dict = Depends(get_admin_user)):
-    """Approve (activate=true) or reject (activate=false) a pending registration."""
+    """Verify (activate=true), unverify (unverify=true), or reject (activate=false) an account."""
     data = await read_json_object(request)
+    unverify = bool(data.get('unverify') or data.get('deactivate')) if data else False
     activate = bool(data.get('activate', True)) if data else True
 
     conn = get_db_connection()
@@ -891,17 +895,30 @@ async def activate_user(user_id: str, request: Request,
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if activate:
+        if unverify or (data and data.get('action') == 'unverify'):
+            cursor.execute("UPDATE users SET is_active = 0 WHERE user_id = %s", (user_id,))
+            action = 'UNVERIFY_USER'
+            msg = f"{user['role']} unverified. They will not be able to sign in until verified again."
+        elif activate:
             cursor.execute("UPDATE users SET is_active = 1 WHERE user_id = %s", (user_id,))
-            action = 'ACTIVATE_USER'
+            cursor.execute("UPDATE identity_documents SET verified_at = NOW() WHERE user_id = %s AND verified_at IS NULL", (user_id,))
+            action = 'VERIFY_USER'
+            msg = f"{user['role']} verified successfully. They can now sign in."
         else:
-            # Rejection: delete the user and their role row (cascade handles role table)
+            # Rejection: delete role row and user
+            if user['role'] == 'Agent':
+                cursor.execute("DELETE FROM agent WHERE user_id = %s", (user_id,))
+            elif user['role'] == 'Owner':
+                cursor.execute("DELETE FROM owner WHERE user_id = %s", (user_id,))
+            elif user['role'] == 'Tenant':
+                cursor.execute("DELETE FROM tenant WHERE user_id = %s", (user_id,))
             cursor.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
             action = 'REJECT_USER'
+            msg = f"{user['role']} account rejected and removed."
 
         conn.commit()
         log_audit_action(admin['user_id'], action, 'users', user_id, None, user['email'], request.client.host)
-        return {"status": "success", "action": action, "user_id": user_id}
+        return {"status": "success", "action": action, "user_id": user_id, "message": msg}
     except HTTPException:
         conn.rollback()
         raise
@@ -1338,8 +1355,7 @@ def get_admin_verifications(admin: dict = Depends(get_admin_user)):
             user['document_count'] = int(user['document_count'] or 0)
             user['verified_count'] = int(user['verified_count'] or 0)
             user['verification_status'] = (
-                'Not submitted' if user['document_count'] == 0 else
-                'Verified' if user['verified_count'] == user['document_count'] else
+                'Verified' if user['is_active'] == 1 else
                 'Pending'
             )
         return {"status": "success", "data": users}
@@ -1380,7 +1396,7 @@ def get_verification_document(user_id: str, document_id: str, admin: dict = Depe
         conn.close()
 
 @app.put("/api/admin/verification/{user_id}")
-def verify_user_documents(user_id: str, request: Request, admin: dict = Depends(get_admin_user)):
+async def verify_user_documents(user_id: str, request: Request, admin: dict = Depends(get_admin_user)):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection failed")
@@ -1398,18 +1414,60 @@ def verify_user_documents(user_id: str, request: Request, admin: dict = Depends(
         submitted_documents = {row['document_type'] for row in cursor.fetchall()}
         missing_documents = sorted(required_documents - submitted_documents)
         if missing_documents:
-            return err("Missing required documents: " + ", ".join(missing_documents) + ".")
+            return err("Missing required documents: " + ", ".join(missing_documents) + ". You can use 'Approve " + user['role'] + "' to activate the account.")
 
         cursor.execute("UPDATE identity_documents SET verified_at = NOW() WHERE user_id = %s", (user_id,))
+        cursor.execute("UPDATE users SET is_active = 1 WHERE user_id = %s", (user_id,))
         conn.commit()
         log_audit_action(admin['user_id'], 'VERIFY_IDENTITY_DOCUMENTS', 'identity_documents', user_id, None, user['role'], request.client.host if request.client else None)
-        return {"status": "success", "message": "Documents verified"}
+        return {"status": "success", "message": f"{user['role']} identity verified and activated successfully. They can now sign in."}
     except HTTPException:
         conn.rollback()
         raise
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail="Could not verify identity documents") from exc
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.put("/api/admin/verification/{user_id}/approve_docs")
+async def approve_all_user_documents(user_id: str, request: Request, admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT role FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User account not found")
+        cursor.execute("UPDATE identity_documents SET verified_at = NOW() WHERE user_id = %s AND verified_at IS NULL", (user_id,))
+        conn.commit()
+        log_audit_action(admin['user_id'], 'VERIFY_IDENTITY_DOCUMENTS', 'identity_documents', user_id, None, user['role'], request.client.host if request.client else None)
+        return {"status": "success", "message": "All submitted documents have been approved."}
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "approve_all_user_documents")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/admin/verification/{user_id}/documents/{document_id}/verify")
+async def verify_single_document(user_id: str, document_id: str, request: Request, admin: dict = Depends(get_admin_user)):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE identity_documents SET verified_at = NOW() WHERE user_id = %s AND document_id = %s", (user_id, document_id))
+        conn.commit()
+        log_audit_action(admin['user_id'], 'VERIFY_DOCUMENT', 'identity_documents', document_id, None, user_id, request.client.host if request.client else None)
+        return {"status": "success", "message": "Document approved."}
+    except Exception as exc:
+        conn.rollback()
+        return server_error(exc, "verify_single_document")
     finally:
         cursor.close()
         conn.close()
@@ -2083,7 +2141,7 @@ def create_agent(req: AgentCreate, admin: dict = Depends(get_admin_user)):
         agent_id = "AGT_" + str(uuid.uuid4())[:8]
         password_hash = hash_password(req.password)
 
-        cursor.execute("INSERT INTO users (user_id, email, password_hash, role) VALUES (%s, %s, %s, 'Agent')", (user_id, email, password_hash))
+        cursor.execute("INSERT INTO users (user_id, email, password_hash, role, password_last_changed) VALUES (%s, %s, %s, 'Agent', NOW())", (user_id, email, password_hash))
         cursor.execute("INSERT INTO agent (agent_id, user_id, name, email, phone_number) VALUES (%s, %s, %s, %s, %s)", (agent_id, user_id, name, email, phone))
         conn.commit()
 
@@ -2177,8 +2235,11 @@ def get_admin_listings(admin: dict = Depends(get_admin_user)):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT p.property_id, p.property_name, p.city, p.price, p.property_status, p.created_at, p.views
-            FROM property p ORDER BY p.created_at DESC
+            SELECT p.property_id, p.property_name, p.city, p.price, p.property_status, p.created_at, p.views,
+                   COALESCE(o.name, '') AS owner_name
+            FROM property p
+            LEFT JOIN owner o ON o.owner_id = p.owner_id
+            ORDER BY p.created_at DESC
         """)
         listings = cursor.fetchall()
         for l in listings:
@@ -2458,6 +2519,54 @@ def delete_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)
     delete_upload_files(media_urls)
     log_audit_action(admin['user_id'], 'DELETE_PROPERTY', 'property', property_id, prop['property_name'], None, None)
     return {"status": "success", "message": "Property deleted successfully"}
+
+@app.put("/api/admin/listings/{property_id}/publish")
+def publish_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
+    """Promote a Draft listing to Published so it appears on Browse."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT property_name, property_status FROM property WHERE property_id = %s", (property_id,))
+        prop = cursor.fetchone()
+        if not prop:
+            return err("Property not found.", 404)
+        cursor.execute("UPDATE property SET property_status = 'Published' WHERE property_id = %s", (property_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return server_error(e, "publish_admin_listing")
+    finally:
+        cursor.close()
+        conn.close()
+    log_audit_action(admin['user_id'], 'PUBLISH_LISTING', 'property', property_id, prop['property_name'], None, None)
+    return {"status": "success", "message": "Listing published. It is now live on Browse."}
+
+
+@app.put("/api/admin/listings/{property_id}/reject")
+def reject_admin_listing(property_id: str, admin: dict = Depends(get_admin_user)):
+    """Archive/reject a Draft listing submitted by an owner."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT property_name FROM property WHERE property_id = %s", (property_id,))
+        prop = cursor.fetchone()
+        if not prop:
+            return err("Property not found.", 404)
+        cursor.execute("UPDATE property SET property_status = 'Archived' WHERE property_id = %s", (property_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return server_error(e, "reject_admin_listing")
+    finally:
+        cursor.close()
+        conn.close()
+    log_audit_action(admin['user_id'], 'REJECT_LISTING', 'property', property_id, prop['property_name'], None, None)
+    return {"status": "success", "message": "Listing rejected and archived."}
+
 
 @app.get("/api/admin/inquiries")
 def get_admin_inquiries(admin: dict = Depends(get_admin_user)):

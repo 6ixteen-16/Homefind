@@ -143,7 +143,7 @@
                             </tr>
                         `).join('');
                     } else {
-                        alert(res.message);
+                        alert(apiErr(res));
                     }
                 });
         }
@@ -177,7 +177,7 @@
                 .then(res => res.json())
                 .then(res => {
                     if (res.status === 'success') fetchAgents();
-                    else alert(res.message);
+                    else alert(apiErr(res));
                 });
         }
 
@@ -195,7 +195,7 @@
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === 'success') { closeModal(); fetchAgents(); }
-                        else alert(res.message);
+                        else alert(apiErr(res));
                     });
             } else {
                 // Add
@@ -205,7 +205,7 @@
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === 'success') { closeModal(); fetchAgents(); }
-                        else alert(res.message);
+                        else alert(apiErr(res));
                     });
             }
         });
