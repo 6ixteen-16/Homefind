@@ -7,7 +7,6 @@ import os
 import mimetypes
 from pathlib import Path
 from dotenv import load_dotenv
-from backup_sync import DualSyncConnection
 
 load_dotenv()
 
@@ -279,7 +278,7 @@ def get_db_connection():
             database=DB_NAME,
             cursorclass=pymysql.cursors.DictCursor
         )
-        return DualSyncConnection(conn)
+        return conn
     except Exception as e:
         print(f"Error connecting to MySQL: {e}")
         return None

@@ -37,10 +37,32 @@ $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $backupFile = Join-Path $onedriveDir "homefinder_db_$timestamp.sql"
 $latestFile = Join-Path $onedriveDir "homefinder_db_latest.sql"
 
-$mysqldump = "C:\Program Files\MySQL\MySQL Server 26.7\bin\mysqldump.exe"
+# Locate mysqldump dynamically across any standard MySQL installation
+$mysqldump = $null
+$found = Get-Command mysqldump -ErrorAction SilentlyContinue
+if ($found) {
+    $mysqldump = $found.Source
+} else {
+    $searchRoots = @(
+        "C:\Program Files\MySQL",
+        "C:\Program Files (x86)\MySQL",
+        "C:\xampp\mysql\bin",
+        "C:\laragon\bin\mysql"
+    )
+    foreach ($root in $searchRoots) {
+        if (Test-Path $root) {
+            $candidate = Get-ChildItem $root -Recurse -Filter "mysqldump.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($candidate) {
+                $mysqldump = $candidate.FullName
+                break
+            }
+        }
+    }
+}
+
 if (!(Test-Path $mysqldump)) {
-    $found = Get-Command mysqldump -ErrorAction SilentlyContinue
-    if ($found) { $mysqldump = $found.Source }
+    Write-Host "[ERROR] Could not find mysqldump.exe. Please ensure MySQL is installed and mysqldump is in your PATH." -ForegroundColor Red
+    exit 1
 }
 
 Write-Host "============================================================"
